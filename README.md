@@ -54,7 +54,7 @@ pip install git+https://github.com/flowese/UdioWrapper.git
 5. Find the cookie named `session_cookie`.
 6. Click on `session_cookie` and copy the value in the `Value` field.
 
-![Udio Wrapper](screen_auth_token.jpeg)
+![Udio Wrapper](screen_cookies.jpeg)
 
 ### Usage
 
@@ -95,8 +95,6 @@ If you'd like to contribute to this project, feel free to fork the repository an
 
 ### Pending Tasks and Features
 
-- Implement a feature for live tweaking of the generated music.
-- Add support for real-time collaboration among multiple users.
 - Improve error handling and response validation.
 - Implement a user-friendly web interface for easier interaction with the API.
 
