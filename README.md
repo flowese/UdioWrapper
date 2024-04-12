@@ -66,7 +66,7 @@ from udio_wrapper import UdioWrapper
 udio = UdioWrapper(auth_token="your_auth_token_here")
 final_song_url = udio.inference(
     original_prompt="Create a song about summer vibes.",
-    number_of_extensions=2,
+    number_of_extensions=1,
     extend_prompt="Create a song about summer vibes.",
     outro_prompt="Create a song about summer vibes.",
     save_to_disk=True
