@@ -51,7 +51,7 @@ pip install git+https://github.com/flowese/UdioWrapper.git
    - In Chrome: `Ctrl+Shift+I` or `F12` on Windows, `Cmd+Option+I` on Mac.
 3. Go to the `Application` tab.
 4. On the left panel, locate and click on `Cookies`, then select the Ideogram website.
-5. Find the cookie named `session_cookie`.
+5. Find the cookie named `sb-api-auth-token`.
 6. Click on `sb-api-auth-token` and copy the value in the `Value` field.
 
 ![Udio Wrapper](screen_cookies.jpeg)
