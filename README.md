@@ -46,10 +46,13 @@ pip install git+https://github.com/flowese/UdioWrapper.git
 
 ### Obtaining the Authorization Token
 
-1. Sign up at [Udio](https://udio.com/signup).
-2. Once registered, access your account settings.
-3. Navigate to the API section and generate a new API token.
-4. Copy the generated token for use in the UdioWrapper.
+1. Sign up at [Udio](https://www.udio.com/).
+2. Once registered, open your browser's inspector:
+   - In Chrome: `Ctrl+Shift+I` or `F12` on Windows, `Cmd+Option+I` on Mac.
+3. Go to the `Application` tab.
+4. On the left panel, locate and click on `Cookies`, then select the Ideogram website.
+5. Find the cookie named `session_cookie`.
+6. Click on `session_cookie` and copy the value in the `Value` field.
 
 ![Udio Wrapper](screen_auth_token.jpeg)
 
