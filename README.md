@@ -67,8 +67,8 @@ udio = UdioWrapper(auth_token="your_auth_token_here")
 final_song_url = udio.inference(
     original_prompt="Create a song about summer vibes.",
     number_of_extensions=2,
-    extend_prompt="Continue the summer vibe song.",
-    outro_prompt="Finish with a cool summer outro.",
+    extend_prompt="Create a song about summer vibes.",
+    outro_prompt="Create a song about summer vibes.",
     save_to_disk=True
 )
 print(f"Final song URL: {final_song_url}")
