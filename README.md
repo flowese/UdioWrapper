@@ -60,6 +60,10 @@ pip install git+https://github.com/flowese/UdioWrapper.git
 
 To use `udio_wrapper`, import the `UdioWrapper` class and provide the necessary parameters.
 
+## Usage Examples
+
+The following examples demonstrate various ways to use the `UdioWrapper` to generate music based on different scenarios:
+
 Generating a Complete Song with Automatically Generated Lyrics
 ```python
 from udio_wrapper import UdioWrapper
