@@ -54,8 +54,8 @@ class UdioWrapper:
                     song_title = song_info['songs'][0]['title'].replace(" ", "_")
                     self.download_song(song_url, song_title, directory)
                 return song_url
-            print("The song is not ready yet. Checking in 5 seconds...")
-            sleep(5)
+            print("The song is not ready yet. Checking in 15 seconds...")
+            sleep(15)
 
     def generate_song(self, prompt, conditioning=None):
         data = {
