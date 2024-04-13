@@ -34,6 +34,12 @@ To install the package from PyPI, run the following command:
 pip install udio_wrapper
 ```
 
+Upgrade:
+```bash
+pip install --upgrade --no-cache-dir udio_wrapper
+```
+
+
 ### From GitHub Repository
 
 To install the package directly from the GitHub repository, run:
