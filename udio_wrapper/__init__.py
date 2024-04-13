@@ -43,7 +43,7 @@ class UdioWrapper:
         response_download = requests.get(song_url, headers=self.headers)
         with open(file_path, 'wb') as f:
             f.write(response_download.content)
-        print(f"La canción '{song_title}' ha sido descargada en '{directory}'.")
+        print(f"The song '{song_title}' has been downloaded to '{directory}'.")
 
     def process_song(self, song_id, directory='output', save_to_disk=True):
         while True:
@@ -54,8 +54,8 @@ class UdioWrapper:
                     song_title = song_info['songs'][0]['title'].replace(" ", "_")
                     self.download_song(song_url, song_title, directory)
                 return song_url
-            print("La canción aún no está lista. Comprobando en 10 segundos...")
-            sleep(10)
+            print("The song is not ready yet. Checking in 5 seconds...")
+            sleep(5)
 
     def generate_song(self, prompt, conditioning=None):
         data = {
