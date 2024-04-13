@@ -25,7 +25,7 @@ class UdioWrapper:
             'sec-fetch-dest': 'empty',
             'sec-fetch-mode': 'cors',
             'sec-fetch-site': 'same-origin',
-            'Cookie': f'_ga=GA1.1.140616435.1712840849; sb-api-auth-token={auth_token}',
+            'Cookie': f'; sb-api-auth-token={auth_token}',
         }
 
     def send_request(self, endpoint, data=None, method='GET'):
