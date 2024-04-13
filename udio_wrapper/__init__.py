@@ -1,8 +1,8 @@
 """
 Udio Wrapper
 Author: Flowese
-Version: 0.0.1
-Date: 2024-04-12
+Version: 0.0.2
+Date: 2024-04-13
 Description: Generates songs using the Udio API using textual prompts.
 """
 
@@ -57,26 +57,27 @@ class UdioWrapper:
             print("The song is not ready yet. Checking in 15 seconds...")
             sleep(15)
 
-    def generate_song(self, prompt, conditioning=None):
+    def generate_song(self, prompt, lyric_input=None, conditioning=None):
         data = {
             "prompt": prompt,
             "samplerOptions": {"seed": -1}
         }
+        if lyric_input is not None:
+            data["lyricInput"] = lyric_input
         if conditioning:
             data["samplerOptions"].update(conditioning)
         return self.send_request('generate-proxy', data, 'POST')
 
-    def inference(self, original_prompt, number_of_extensions=0, extend_prompt=None, outro_prompt=None, save_to_disk=True):
-        initial_song = self.generate_song(original_prompt)
+    def inference(self, original_prompt, original_lyric_input=None, number_of_extensions=0, extend_prompt=None, extend_lyric_input=None, outro_prompt=None, outro_lyric_input=None, save_to_disk=True):
+        initial_song = self.generate_song(prompt=original_prompt, lyric_input=original_lyric_input)
         initial_song_url = self.process_song(initial_song['track_ids'][0], save_to_disk=save_to_disk)
 
         current_song_url = initial_song_url
         current_track_id = initial_song['track_ids'][0]
 
-        # Extend the song the specified number of times
         for _ in range(number_of_extensions):
             if extend_prompt:
-                extended_song = self.generate_song(extend_prompt, {
+                extended_song = self.generate_song(prompt=extend_prompt, lyric_input=extend_lyric_input, conditioning={
                     "audio_conditioning_path": current_song_url,
                     "audio_conditioning_song_id": current_track_id,
                     "audio_conditioning_type": "continuation"
@@ -84,9 +85,8 @@ class UdioWrapper:
                 current_song_url = self.process_song(extended_song['track_ids'][0], save_to_disk=save_to_disk)
                 current_track_id = extended_song['track_ids'][0]
 
-        # Add an outro if an outro prompt is provided
         if outro_prompt:
-            outro_song = self.generate_song(outro_prompt, {
+            outro_song = self.generate_song(prompt=outro_prompt, lyric_input=outro_lyric_input, conditioning={
                 "audio_conditioning_path": current_song_url,
                 "audio_conditioning_song_id": current_track_id,
                 "audio_conditioning_type": "continuation",
@@ -95,3 +95,4 @@ class UdioWrapper:
             current_song_url = self.process_song(outro_song['track_ids'][0], 'final_songs', save_to_disk)
 
         return current_song_url
+
