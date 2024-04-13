@@ -88,6 +88,9 @@ print(f"URL of the complete song with automatic lyrics: {auto_song_url}")
 
 Generating a Complete Instrumental Song
 ```python
+from udio_wrapper import UdioWrapper
+
+udio = UdioWrapper(auth_token="your_auth_token_here")
 instrumental_song_url = udio.inference(
     original_prompt="Smooth jazz instrumental music",
     original_lyric_input="",
@@ -104,6 +107,9 @@ print(f"URL of the complete instrumental song: {instrumental_song_url}")
 
 Generating a Complete Song with Custom Lyrics
 ```python
+from udio_wrapper import UdioWrapper
+
+udio = UdioWrapper(auth_token="your_auth_token_here")
 custom_lyric_song_url = udio.inference(
     original_prompt="A ballad about lost love",
     original_lyric_input="Here under the moonlight, I remember your smile",
@@ -120,6 +126,9 @@ print(f"URL of the complete song with custom lyrics: {custom_lyric_song_url}")
 
 Generating a Simple Song with Custom Lyrics (No Extensions or Outro)
 ```python
+from udio_wrapper import UdioWrapper
+
+udio = UdioWrapper(auth_token="your_auth_token_here")
 simple_custom_lyric_song_url = udio.inference(
     original_prompt="A pop song about bright city nights",
     original_lyric_input="Neon lights and lonely hearts",
@@ -131,6 +140,9 @@ print(f"URL of the simple song with custom lyrics: {simple_custom_lyric_song_url
 
 Generating a Simple Instrumental Song (No Extensions or Outro)
 ```python
+from udio_wrapper import UdioWrapper
+
+udio = UdioWrapper(auth_token="your_auth_token_here")
 simple_instrumental_song_url = udio.inference(
     original_prompt="Classical piano piece in minor key",
     original_lyric_input="",
