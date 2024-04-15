@@ -1,16 +1,8 @@
 """
 Udio Wrapper
 Author: Flowese
-Version: 0.0.2
+Version: 0.0.3
 Date: 2024-04-15
-Description: Generates songs using the Udio API using textual prompts.
-"""
-
-"""
-Udio Wrapper
-Author: Flowese
-Version: 0.0.1
-Date: 2024-04-12
 Description: Generates songs using the Udio API using textual prompts.
 """
 
