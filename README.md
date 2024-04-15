@@ -76,19 +76,18 @@ udio_wrapper = UdioWrapper(auth_token)
 ```
 
 1. Creating a Short Song
-Generate a short song without downloading it. You can specify the prompt, seed, custom lyrics, and whether to download the song.
+You can specify the prompt, seed, custom lyrics.
 ```python
 
 short_song_no_download = udio_wrapper.create_song(
     prompt="Relaxing jazz and soulful music",
     seed=-1,
-    custom_lyrics="Short song lyrics here",
-    download=False
+    custom_lyrics="Short song lyrics here"
 )
 print("Short song generated without downloading:", short_song_no_download)
 ```
 2. Extending a Song
-Extend a previously created song by providing its path and ID for conditioning. This method also allows for lyric customization and optional downloading.
+Extend a previously created song by providing its path and ID for conditioning. This method also allows for lyric customization.
 ```python
 
 extend_song_download = udio_wrapper.extend(
@@ -96,14 +95,13 @@ extend_song_download = udio_wrapper.extend(
     seed=-1,
     audio_conditioning_path="url-generated-song",
     audio_conditioning_song_id="previous-song-id",
-    custom_lyrics="Extended version lyrics",
-    download=True
+    custom_lyrics="Extended version lyrics"
 )
 print("Extended song generated and downloaded:", extend_song_download)
 ```
 
 3. Adding an Outro
-Generate an outro for your music sequence using the last song as a base. This includes custom lyrics and the option to download the outro.
+Generate an outro for your music sequence using the last song as a base. This includes custom lyrics.
 ```python
 
 outro_song_download = udio_wrapper.add_outro(
@@ -111,14 +109,13 @@ outro_song_download = udio_wrapper.add_outro(
     seed=-1,
     audio_conditioning_path="url-generated-song",
     audio_conditioning_song_id="last-extended-song-id",
-    custom_lyrics="Outro lyrics here",
-    download=True
+    custom_lyrics="Outro lyrics here"
 )
 print("Outro song generated and downloaded:", outro_song_download)
 ```
 
 4. Creating a Complete Song Sequence
-Generate a full sequence of songs, including multiple extensions and an outro. This process involves defining prompts and lyrics for each part of the sequence and deciding whether to download the final outputs.
+Generate a full sequence of songs, including multiple extensions and an outro. This process involves defining prompts and lyrics for each part of the sequence.
 ```python
 complete_song_sequence = udio_wrapper.create_complete_song(
     short_prompt="On a full moon night",
@@ -127,8 +124,7 @@ complete_song_sequence = udio_wrapper.create_complete_song(
     num_extensions=2,
     custom_lyrics_short="Short song lyrics here",
     custom_lyrics_extend=["Lyrics for first extension", "Lyrics for second extension"],
-    custom_lyrics_outro="Outro lyrics here",
-    download=True
+    custom_lyrics_outro="Outro lyrics here"
 )
 print("Complete song sequence generated and downloaded:", complete_song_sequence)
 ```
@@ -145,8 +141,6 @@ Each method in the `UdioWrapper` class can take several parameters to control so
 - **seed** *(int, optional)*: A seed number to ensure the reproducibility of the song generation. Using the same seed with the same parameters will generate the same audio output. Default is `-1`, which results in random generation each time.
 
 - **custom_lyrics** *(str, optional)*: Lyrics written by the user to be included in the song. If no lyrics are provided, the generation relies solely on the musical style implied by the prompt.
-
-- **download** *(bool, optional)*: A boolean flag that indicates whether to download the generated songs. If set to `True`, the song will be downloaded and saved locally. Default is `True`.
 
 - **audio_conditioning_path** *(str, optional)*: The file path to an audio file that will serve as a base or influence for the song being generated. This is used primarily for extending songs or generating outros based on a previous song.
 
