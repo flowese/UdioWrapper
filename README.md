@@ -74,9 +74,11 @@ The following examples demonstrate various ways to use the `UdioWrapper` to gene
 auth_token ="your_udio_token"
 
 udio_wrapper = UdioWrapper(auth_token)
+```
 
 1. Creating a Short Song
 Generate a short song without downloading it. You can specify the prompt, seed, custom lyrics, and whether to download the song.
+```python
 
 short_song_no_download = udio_wrapper.create_song(
     prompt="Relaxing jazz and soulful music",
@@ -85,9 +87,11 @@ short_song_no_download = udio_wrapper.create_song(
     download=False
 )
 print("Short song generated without downloading:", short_song_no_download)
-
+```
 2. Extending a Song
 Extend a previously created song by providing its path and ID for conditioning. This method also allows for lyric customization and optional downloading.
+```python
+
 
 extend_song_download = udio_wrapper.extend(
     prompt="A dynamic version of relaxing jazz and soulful music",
@@ -98,9 +102,11 @@ extend_song_download = udio_wrapper.extend(
     download=True
 )
 print("Extended song generated and downloaded:", extend_song_download)
+```
 
 3. Adding an Outro
 Generate an outro for your music sequence using the last song as a base. This includes custom lyrics and the option to download the outro.
+``python
 
 outro_song_download = udio_wrapper.add_outro(
     prompt="A smooth ending to our jazz session",
@@ -111,9 +117,11 @@ outro_song_download = udio_wrapper.add_outro(
     download=True
 )
 print("Outro song generated and downloaded:", outro_song_download)
+```
 
 4. Creating a Complete Song Sequence
 Generate a full sequence of songs, including multiple extensions and an outro. This process involves defining prompts and lyrics for each part of the sequence and deciding whether to download the final outputs.
+``python
 
 complete_song_sequence = udio_wrapper.create_complete_song(
     short_prompt="On a full moon night",
@@ -126,7 +134,6 @@ complete_song_sequence = udio_wrapper.create_complete_song(
     download=True
 )
 print("Complete song sequence generated and downloaded:", complete_song_sequence)
-
 ```
 
 
