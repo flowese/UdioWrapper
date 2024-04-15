@@ -94,7 +94,7 @@ Extend a previously created song by providing its path and ID for conditioning. 
 extend_song_download = udio_wrapper.extend(
     prompt="A dynamic version of relaxing jazz and soulful music",
     seed=-1,
-    audio_conditioning_path="path/to/previous/song.mp3",
+    audio_conditioning_path="url-generated-song",
     audio_conditioning_song_id="previous-song-id",
     custom_lyrics="Extended version lyrics",
     download=True
@@ -109,7 +109,7 @@ Generate an outro for your music sequence using the last song as a base. This in
 outro_song_download = udio_wrapper.add_outro(
     prompt="A smooth ending to our jazz session",
     seed=-1,
-    audio_conditioning_path="path/to/last/extended/song.mp3",
+    audio_conditioning_path="url-generated-song",
     audio_conditioning_song_id="last-extended-song-id",
     custom_lyrics="Outro lyrics here",
     download=True
