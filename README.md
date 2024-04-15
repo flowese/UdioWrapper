@@ -135,8 +135,6 @@ print("Complete song sequence generated and downloaded:", complete_song_sequence
 
 #### Parameters
 
-Each parameter in the `UdioWrapper` inference method has a specific purpose for creating customized music tracks:
-
 - **`auth_token`** *(Required)*: The authorization token you obtained from Udio, which is necessary for authenticating and making API requests.
 
 
