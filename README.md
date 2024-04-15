@@ -70,85 +70,62 @@ To use `udio_wrapper`, import the `UdioWrapper` class and provide the necessary 
 
 The following examples demonstrate various ways to use the `UdioWrapper` to generate music based on different scenarios:
 
-Generating a Complete Song with Automatically Generated Lyrics
 ```python
-from udio_wrapper import UdioWrapper
+auth_token ="your_udio_token"
 
-udio = UdioWrapper(auth_token="your_auth_token_here")
-auto_song_url = udio.inference(
-    original_prompt="A song about the wonders of nature",
-    number_of_extensions=1,
-    extend_prompt="Keep singing about the beauty of the forest",
-    outro_prompt="Concluding with the serene sunset",
-    save_to_disk=True
+udio_wrapper = UdioWrapper(auth_token)
+
+1. Creating a Short Song
+Generate a short song without downloading it. You can specify the prompt, seed, custom lyrics, and whether to download the song.
+
+short_song_no_download = udio_wrapper.create_song(
+    prompt="Relaxing jazz and soulful music",
+    seed=-1,
+    custom_lyrics="Short song lyrics here",
+    download=False
 )
-print(f"URL of the complete song with automatic lyrics: {auto_song_url}")
+print("Short song generated without downloading:", short_song_no_download)
 
-```
+2. Extending a Song
+Extend a previously created song by providing its path and ID for conditioning. This method also allows for lyric customization and optional downloading.
 
-Generating a Complete Instrumental Song
-```python
-from udio_wrapper import UdioWrapper
-
-udio = UdioWrapper(auth_token="your_auth_token_here")
-instrumental_song_url = udio.inference(
-    original_prompt="Smooth jazz instrumental music",
-    original_lyric_input="",
-    number_of_extensions=1,
-    extend_prompt="Continue the smooth jazz vibe",
-    extend_lyric_input="",
-    outro_prompt="Finish with a calming jazz outro",
-    outro_lyric_input="",
-    save_to_disk=True
+extend_song_download = udio_wrapper.extend(
+    prompt="A dynamic version of relaxing jazz and soulful music",
+    seed=-1,
+    audio_conditioning_path="path/to/previous/song.mp3",
+    audio_conditioning_song_id="previous-song-id",
+    custom_lyrics="Extended version lyrics",
+    download=True
 )
-print(f"URL of the complete instrumental song: {instrumental_song_url}")
+print("Extended song generated and downloaded:", extend_song_download)
 
-```
+3. Adding an Outro
+Generate an outro for your music sequence using the last song as a base. This includes custom lyrics and the option to download the outro.
 
-Generating a Complete Song with Custom Lyrics
-```python
-from udio_wrapper import UdioWrapper
-
-udio = UdioWrapper(auth_token="your_auth_token_here")
-custom_lyric_song_url = udio.inference(
-    original_prompt="A ballad about lost love",
-    original_lyric_input="Here under the moonlight, I remember your smile",
-    number_of_extensions=1,
-    extend_prompt="Continuing the tale of our summer love",
-    extend_lyric_input="Now all I have is the echo of your laughter",
-    outro_prompt="Ending our story as the leaves begin to fall",
-    outro_lyric_input="Farewell my love, until we meet again",
-    save_to_disk=True
+outro_song_download = udio_wrapper.add_outro(
+    prompt="A smooth ending to our jazz session",
+    seed=-1,
+    audio_conditioning_path="path/to/last/extended/song.mp3",
+    audio_conditioning_song_id="last-extended-song-id",
+    custom_lyrics="Outro lyrics here",
+    download=True
 )
-print(f"URL of the complete song with custom lyrics: {custom_lyric_song_url}")
+print("Outro song generated and downloaded:", outro_song_download)
 
-```
+4. Creating a Complete Song Sequence
+Generate a full sequence of songs, including multiple extensions and an outro. This process involves defining prompts and lyrics for each part of the sequence and deciding whether to download the final outputs.
 
-Generating a Simple Song with Custom Lyrics (No Extensions or Outro)
-```python
-from udio_wrapper import UdioWrapper
-
-udio = UdioWrapper(auth_token="your_auth_token_here")
-simple_custom_lyric_song_url = udio.inference(
-    original_prompt="A pop song about bright city nights",
-    original_lyric_input="Neon lights and lonely hearts",
-    save_to_disk=True
+complete_song_sequence = udio_wrapper.create_complete_song(
+    short_prompt="On a full moon night",
+    extend_prompts=["the soft sound of the saxophone fills the air", "creating an atmosphere of mystery and romance"],
+    outro_prompt="Thus ends this melody, leaving an echo of emotions in the heart",
+    num_extensions=2,
+    custom_lyrics_short="Short song lyrics here",
+    custom_lyrics_extend=["Lyrics for first extension", "Lyrics for second extension"],
+    custom_lyrics_outro="Outro lyrics here",
+    download=True
 )
-print(f"URL of the simple song with custom lyrics: {simple_custom_lyric_song_url}")
-
-```
-
-Generating a Simple Instrumental Song (No Extensions or Outro)
-```python
-from udio_wrapper import UdioWrapper
-
-udio = UdioWrapper(auth_token="your_auth_token_here")
-simple_instrumental_song_url = udio.inference(
-    original_prompt="Classical piano piece in minor key",
-    original_lyric_input="",
-    save_to_disk=True
-)
-print(f"URL of the simple instrumental song: {simple_instrumental_song_url}")
+print("Complete song sequence generated and downloaded:", complete_song_sequence)
 
 ```
 
@@ -159,21 +136,27 @@ Each parameter in the `UdioWrapper` inference method has a specific purpose for 
 
 - **`auth_token`** *(Required)*: The authorization token you obtained from Udio, which is necessary for authenticating and making API requests.
 
-- **`original_prompt`** *(Required)*: The initial textual prompt that sets the thematic direction for generating the first track. This is the creative seed from which the song is grown.
 
-- **`original_lyric_input`** *(Optional)*: Specifies the lyrics for the initial track. If provided as an empty string (`""`), the resulting song will be purely instrumental. If omitted, Udio's API will automatically generate lyrics based on the `original_prompt`.
+Each method in the `UdioWrapper` class can take several parameters to control song generation and processing. Below is a breakdown of the parameters and their usage:
 
-- **`number_of_extensions`** *(Optional)*: The number of times the initial track should be extended. Each extension will be based on the last segment of the music generated in the previous step. The default value is 0, which means no extensions.
+- **prompt** *(str)*: A text prompt describing the theme or emotion of the song. This is the creative input from which the song generation is based.
 
-- **`extend_prompt`** *(Optional)*: The textual prompt for each extension phase. This prompt should ideally continue the theme or style set by the `original_prompt`.
+- **seed** *(int, optional)*: A seed number to ensure the reproducibility of the song generation. Using the same seed with the same parameters will generate the same audio output. Default is `-1`, which results in random generation each time.
 
-- **`extend_lyric_input`** *(Optional)*: Custom lyrics for each extension phase. If this parameter is set to an empty string, the extension will be instrumental. If omitted, the API will automatically generate lyrics that attempt to continue the thematic content of the song.
+- **custom_lyrics** *(str, optional)*: Lyrics written by the user to be included in the song. If no lyrics are provided, the generation relies solely on the musical style implied by the prompt.
 
-- **`outro_prompt`** *(Optional)*: The textual prompt for the outro of the song, providing a thematic and musical conclusion.
+- **download** *(bool, optional)*: A boolean flag that indicates whether to download the generated songs. If set to `True`, the song will be downloaded and saved locally. Default is `True`.
 
-- **`outro_lyric_input`** *(Optional)*: Custom lyrics for the outro. If provided as an empty string, the outro will be instrumental. If omitted, the API will generate lyrics that cap off the song's narrative.
+- **audio_conditioning_path** *(str, optional)*: The file path to an audio file that will serve as a base or influence for the song being generated. This is used primarily for extending songs or generating outros based on a previous song.
 
-- **`save_to_disk`** *(Optional)*: A boolean indicating whether to save the generated tracks to the disk. The default is `True`, which means the tracks will be saved.
+- **audio_conditioning_song_id** *(str, optional)*: The identifier of a previously generated song that will be used to influence the current song generation. This is necessary when creating extended songs or outros that are meant to follow a specific musical piece.
+
+- **num_extensions** *(int, optional)*: Specifies the number of extended songs to generate in a sequence. This parameter is only used in the method that generates a complete song sequence. Default is `1`.
+
+- **extend_prompts** *(list of str, optional)*: A list of prompts for generating each extension in a sequence. Each prompt should ideally reflect a progression or variation in style or theme from the previous song.
+
+- **outro_prompt** *(str, optional)*: A prompt specifically for generating an outro. This should convey a sense of conclusion or finale relative to the musical sequence.
+
 
 These parameters allow full customization of the music generation process, from the initial creation through extensions to the final outro, giving users the ability to tailor both the music and lyrics to fit their specific needs or artistic vision.
 
