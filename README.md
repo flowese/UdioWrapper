@@ -71,8 +71,7 @@ To use `udio_wrapper`, import the `UdioWrapper` class and provide the necessary 
 The following examples demonstrate various ways to use the `UdioWrapper` to generate music based on different scenarios:
 
 ```python
-auth_token ="your_udio_token"
-
+auth_token = "your-auth-token-here"  # Replace this with your actual authentication token
 udio_wrapper = UdioWrapper(auth_token)
 ```
 
@@ -92,7 +91,6 @@ print("Short song generated without downloading:", short_song_no_download)
 Extend a previously created song by providing its path and ID for conditioning. This method also allows for lyric customization and optional downloading.
 ```python
 
-
 extend_song_download = udio_wrapper.extend(
     prompt="A dynamic version of relaxing jazz and soulful music",
     seed=-1,
@@ -106,7 +104,7 @@ print("Extended song generated and downloaded:", extend_song_download)
 
 3. Adding an Outro
 Generate an outro for your music sequence using the last song as a base. This includes custom lyrics and the option to download the outro.
-``python
+```python
 
 outro_song_download = udio_wrapper.add_outro(
     prompt="A smooth ending to our jazz session",
@@ -121,8 +119,7 @@ print("Outro song generated and downloaded:", outro_song_download)
 
 4. Creating a Complete Song Sequence
 Generate a full sequence of songs, including multiple extensions and an outro. This process involves defining prompts and lyrics for each part of the sequence and deciding whether to download the final outputs.
-``python
-
+```python
 complete_song_sequence = udio_wrapper.create_complete_song(
     short_prompt="On a full moon night",
     extend_prompts=["the soft sound of the saxophone fills the air", "creating an atmosphere of mystery and romance"],
@@ -135,7 +132,6 @@ complete_song_sequence = udio_wrapper.create_complete_song(
 )
 print("Complete song sequence generated and downloaded:", complete_song_sequence)
 ```
-
 
 #### Parameters
 
