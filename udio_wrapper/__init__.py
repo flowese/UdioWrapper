@@ -9,24 +9,57 @@ Description: Generates songs using the Udio API using textual prompts.
 import requests
 import os
 import time
+from twocaptcha import TwoCaptcha
+import logging
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
+    def __init__(self, auth_token, twocaptcha_api_key):
         self.auth_token = auth_token
         self.all_track_ids = []
+        self.solver = TwoCaptcha(twocaptcha_api_key)
 
-    def make_request(self, url, method, data=None, headers=None):
+    def solve_captcha(self):
         try:
-            if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
-            else:
-                response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            return response
+            result = self.solver.hcaptcha(
+                sitekey='2945592b-1928-43a9-8473-7e7fed3d752e',
+                url='https://www.udio.com/api/generate-proxy'
+            )
+            return result['code']
+        except Exception as e:
+            print(f"Failed to solve captcha: {e}")
+            return None
+
+
+    def make_request(self, url, method, data=None, headers=None, retries=3, delay=2):
+        try:
+            headers = headers or {}
+            headers["Accept"] = "application/json, text/plain, */*"
+            headers["Content-Type"] = "application/json"
+            headers["Cookie"] = f"sb-api-auth-token={self.auth_token}"
+            
+            for attempt in range(retries):
+                print(f"Attempt {attempt + 1}/{retries}")
+                if method == 'POST':
+                    captcha_solution = self.solve_captcha()
+                    if captcha_solution:
+                        headers["H-Captcha-Token"] = captcha_solution
+                    response = requests.post(url, headers=headers, json=data)
+                else:
+                    response = requests.get(url, headers=headers)
+    
+                if response.status_code == 500:
+                        print(f"500 Server Error: Retrying {attempt + 1}/{retries}")
+                        time.sleep(delay)
+                else:
+                        response.raise_for_status()
+                        return response
+
+            print(f"Error making {method} request to {url}: {response.text}")
+            return None
         except requests.exceptions.RequestException as e:
-            print(f"Error making {method} request to {url}: {e}")
+            logging.error(f"Error making {method} request to {url}: {e}", exc_info=True) #Error making logger
             return None
 
     def get_headers(self, get_request=False):
@@ -220,3 +253,9 @@ class UdioWrapper:
         except requests.exceptions.RequestException as e:
             print(f"Failed to download the song. Error: {e}")
 
+auth_token = "your_api_key_here" #add yout api key generated from cookies as per README instructions
+twocaptcha_api_key = "e565f9c19a3eccd58ebc8ee4a32eccc3"
+udio_wrapper = UdioWrapper(auth_token, twocaptcha_api_key)
+response = udio_wrapper.make_request("https://www.udio.com/api/generate-proxy", "POST")
+if response:
+    print(response.json())
