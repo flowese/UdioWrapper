@@ -164,11 +164,30 @@ This project is licensed under the MIT License.
 
 If you'd like to contribute to this project, feel free to fork the repository and send a pull request, or open an issue to discuss what you'd like to change. All contributions are welcome!
 
+## Known Issues
+
+### hCaptcha Protection (Issue #7)
+
+As of April 2024, Udio has implemented hCaptcha protection on their API endpoints, particularly `/generate-proxy`. This causes automated requests to return `500 Server Error`.
+
+**Current Status:**
+- Automated API requests are blocked by hCaptcha
+- Browser-based workarounds (Selenium + undetected-chromedriver) have been attempted but are unreliable
+- Even after manually solving captcha, subsequent requests may still fail
+
+**Possible Workarounds:**
+1. **Browser Automation**: Use Selenium with undetected-chromedriver to handle captcha challenges (requires additional setup, may violate ToS)
+2. **Wait for Official API**: Udio may release an official API with proper authentication
+3. **Manual Session**: Maintain an active browser session and extract updated cookies/tokens
+
+**Note**: Contributing to the bypass of anti-bot systems may violate terms of service and could have legal/employment implications.
+
 ## TODO
 
 ### Pending Tasks and Features
 
 - Improve error handling and response validation.
+- Implement optional browser-based authentication to handle hCaptcha challenges.
 - Implement a user-friendly web interface for easier interaction with the API.
 
 -----

@@ -20,11 +20,25 @@ class UdioWrapper:
     def make_request(self, url, method, data=None, headers=None):
         try:
             if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
+                response = requests.post(url, headers=headers, json=data, timeout=30)
             else:
-                response = requests.get(url, headers=headers)
+                response = requests.get(url, headers=headers, timeout=30)
+            
+            # Check for hCaptcha challenge (500 errors on generate-proxy endpoint)
+            if response.status_code == 500 and 'generate-proxy' in url:
+                print(f"ERROR: Received 500 Server Error from {url}")
+                print("CAUSE: Udio has implemented hCaptcha protection on this endpoint.")
+                print("SOLUTION: Automated requests are currently blocked. Consider:")
+                print("  1. Using a browser-based approach (Selenium + undetected-chromedriver)")
+                print("  2. Waiting for an official Udio API with proper authentication")
+                print("  3. Manual interaction may be required per session")
+                return None
+            
             response.raise_for_status()
             return response
+        except requests.exceptions.Timeout:
+            print(f"Timeout error making {method} request to {url}")
+            return None
         except requests.exceptions.RequestException as e:
             print(f"Error making {method} request to {url}: {e}")
             return None
