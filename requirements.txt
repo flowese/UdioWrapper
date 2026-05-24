@@ -1,1 +1,2 @@
 requests==2.31.0
+playwright>=1.40.0  # optional, for UdioBrowser (hCaptcha bypass)

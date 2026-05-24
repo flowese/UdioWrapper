@@ -1,7 +1,7 @@
 """
 Udio Wrapper
 Author: Flowese
-Version: 0.0.3
+Version: 0.0.4
 Date: 2024-04-15
 Description: Generates songs using the Udio API using textual prompts.
 """
@@ -9,6 +9,8 @@ Description: Generates songs using the Udio API using textual prompts.
 import requests
 import os
 import time
+
+from .browser import UdioBrowser  # noqa: F401
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
@@ -25,6 +27,19 @@ class UdioWrapper:
                 response = requests.get(url, headers=headers)
             response.raise_for_status()
             return response
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response is not None else "unknown"
+            if status == 500:
+                raise RuntimeError(
+                    "Udio returned HTTP 500. This is likely due to hCaptcha "
+                    "blocking the request. Consider using UdioBrowser instead, "
+                    "which uses a real browser to bypass captcha protection:\n"
+                    "  from udio_wrapper import UdioBrowser\n"
+                    "  wrapper = UdioBrowser()\n"
+                    "  wrapper.login()\n"
+                    "  songs = wrapper.generate_song('your prompt')"
+                ) from e
+            raise
         except requests.exceptions.RequestException as e:
             print(f"Error making {method} request to {url}: {e}")
             return None
