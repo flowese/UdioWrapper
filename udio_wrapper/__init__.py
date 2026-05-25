@@ -6,16 +6,63 @@ Date: 2024-04-15
 Description: Generates songs using the Udio API using textual prompts.
 """
 
-import requests
 import os
 import time
+import requests
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
+    def __init__(self, auth_token, captcha_api_key=None, captcha_solver_url="https://api.2captcha.com"):
         self.auth_token = auth_token
         self.all_track_ids = []
+        self.captcha_api_key = captcha_api_key or os.getenv("CAPTCHA_API_KEY")
+        self.captcha_solver_url = captcha_solver_url.rstrip("/")
+
+    def _solve_hcaptcha_token(self, site_url="https://www.udio.com/", site_key=None, timeout=90):
+        """Return an hCaptcha token from 2captcha when API key is configured."""
+        if not self.captcha_api_key:
+            return None
+        site_key = site_key or os.getenv("UDIO_HCAPTCHA_SITEKEY")
+        if not site_key:
+            print("Captcha solver is configured but UDIO_HCAPTCHA_SITEKEY is missing.")
+            return None
+        try:
+            create_resp = requests.post(
+                f"{self.captcha_solver_url}/createTask",
+                json={
+                    "clientKey": self.captcha_api_key,
+                    "task": {
+                        "type": "HCaptchaTaskProxyless",
+                        "websiteURL": site_url,
+                        "websiteKey": site_key,
+                    },
+                },
+                timeout=20,
+            )
+            create_resp.raise_for_status()
+            task_id = create_resp.json().get("taskId")
+            if not task_id:
+                print(f"Captcha task creation failed: {create_resp.text}")
+                return None
+
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                time.sleep(3)
+                result_resp = requests.post(
+                    f"{self.captcha_solver_url}/getTaskResult",
+                    json={"clientKey": self.captcha_api_key, "taskId": task_id},
+                    timeout=20,
+                )
+                result_resp.raise_for_status()
+                body = result_resp.json()
+                if body.get("status") == "ready":
+                    return body.get("solution", {}).get("gRecaptchaResponse")
+            print("Captcha solving timed out.")
+            return None
+        except requests.exceptions.RequestException as e:
+            print(f"Captcha solving request failed: {e}")
+            return None
 
     def make_request(self, url, method, data=None, headers=None):
         try:
@@ -26,6 +73,25 @@ class UdioWrapper:
             response.raise_for_status()
             return response
         except requests.exceptions.RequestException as e:
+            response = getattr(e, "response", None)
+            if (
+                method == "POST"
+                and response is not None
+                and response.status_code == 500
+                and "generate-proxy" in url
+            ):
+                token = self._solve_hcaptcha_token()
+                if token:
+                    retry_headers = dict(headers or {})
+                    retry_data = dict(data or {})
+                    retry_headers["x-hcaptcha-response"] = token
+                    retry_data["hCaptchaToken"] = token
+                    try:
+                        retry_response = requests.post(url, headers=retry_headers, json=retry_data)
+                        retry_response.raise_for_status()
+                        return retry_response
+                    except requests.exceptions.RequestException as retry_err:
+                        print(f"Retry with captcha token failed: {retry_err}")
             print(f"Error making {method} request to {url}: {e}")
             return None
 
@@ -219,4 +285,3 @@ class UdioWrapper:
             print(f"Downloaded {song_title} with url {song_url} to {file_path}")
         except requests.exceptions.RequestException as e:
             print(f"Failed to download the song. Error: {e}")
-
