@@ -1,39 +1,67 @@
 """
 Udio Wrapper
 Author: Flowese
-Version: 0.0.3
-Date: 2024-04-15
+Version: 0.0.4
+Date: 2026-05-25
 Description: Generates songs using the Udio API using textual prompts.
 """
 
 import requests
 import os
 import time
+import logging
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+logger = logging.getLogger(__name__)
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
-        self.auth_token = auth_token
+    def __init__(self, auth_token, timeout=60, max_retries=3):
+        self.auth_token = auth_token.strip()
         self.all_track_ids = []
+        self.timeout = timeout
+        self.session = requests.Session()
+        retry = Retry(
+            total=max_retries,
+            connect=max_retries,
+            read=max_retries,
+            backoff_factor=0.5,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset(["GET", "POST"]),
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
 
     def make_request(self, url, method, data=None, headers=None):
         try:
-            if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
-            else:
-                response = requests.get(url, headers=headers)
+            response = self.session.request(
+                method=method,
+                url=url,
+                headers=headers,
+                json=data,
+                timeout=self.timeout,
+            )
             response.raise_for_status()
             return response
         except requests.exceptions.RequestException as e:
-            print(f"Error making {method} request to {url}: {e}")
+            detail = ""
+            if getattr(e, "response", None) is not None:
+                try:
+                    detail = e.response.text[:500]
+                except Exception:
+                    detail = ""
+            logger.error("Error making %s request to %s: %s %s", method, url, e, detail)
             return None
 
     def get_headers(self, get_request=False):
         headers = {
             "Accept": "application/json, text/plain, */*" if get_request else "application/json",
             "Content-Type": "application/json",
-            "Cookie": f"; sb-api-auth-token={self.auth_token}",
+            "Cookie": f"sb-api-auth-token={self.auth_token}",
             "Origin": "https://www.udio.com",
             "Referer": "https://www.udio.com/my-creations",
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
@@ -219,4 +247,3 @@ class UdioWrapper:
             print(f"Downloaded {song_title} with url {song_url} to {file_path}")
         except requests.exceptions.RequestException as e:
             print(f"Failed to download the song. Error: {e}")
-
