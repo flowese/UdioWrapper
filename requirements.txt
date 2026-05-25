@@ -1,1 +1,3 @@
-requests==2.31.0
+requests>=2.31.0
+# Optional: cloudscraper>=1.2.0  (Cloudflare bypass)
+# Optional: playwright>=1.40.0   (browser-based API calls to bypass hCaptcha)
