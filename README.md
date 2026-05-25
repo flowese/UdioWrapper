@@ -75,6 +75,18 @@ auth_token = "your-auth-token-here"  # Replace this with your actual authenticat
 udio_wrapper = UdioWrapper(auth_token)
 ```
 
+If Udio starts returning `500` errors that are tied to hCaptcha challenges, you can enable
+automatic token solving with 2captcha:
+
+```bash
+export CAPTCHA_API_KEY="your-2captcha-key"
+export UDIO_HCAPTCHA_SITEKEY="udio-hcaptcha-sitekey"
+```
+
+```python
+udio_wrapper = UdioWrapper(auth_token, captcha_api_key=os.getenv("CAPTCHA_API_KEY"))
+```
+
 1. Creating a Short Song
 You can specify the prompt, seed, custom lyrics.
 ```python
