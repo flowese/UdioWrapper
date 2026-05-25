@@ -5,7 +5,7 @@ with open("requirements.txt", "r") as f:
 
 setup(
     name='udio_wrapper',
-    version='0.0.1',
+    version='0.0.4',
     description='Generates songs using the Udio API using textual prompts.',
     author='Flowese',
     packages=find_packages(),
