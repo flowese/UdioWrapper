@@ -10,30 +10,81 @@ import requests
 import os
 import time
 
+
+class UdioWrapperError(Exception):
+    """Raised when Udio returns an error response."""
+
+
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
+    def __init__(self, auth_token=None, cookies=None, timeout=30):
+        if not auth_token and not cookies:
+            raise ValueError("auth_token or cookies is required")
+
         self.auth_token = auth_token
+        self.cookies = cookies
+        self.timeout = timeout
+        self.session = requests.Session()
         self.all_track_ids = []
+
+        if isinstance(cookies, dict):
+            self.session.cookies.update(cookies)
+
+    def _get_cookie_header(self):
+        if isinstance(self.cookies, str):
+            cookie_header = self.cookies.strip()
+            if cookie_header.lower().startswith("cookie:"):
+                return cookie_header.split(":", 1)[1].strip()
+            return cookie_header
+
+        if isinstance(self.cookies, dict):
+            cookie_header = "; ".join(f"{key}={value}" for key, value in self.cookies.items())
+            if "sb-api-auth-token=" in cookie_header or not self.auth_token:
+                return cookie_header
+            return f"{cookie_header}; sb-api-auth-token={self.auth_token}"
+
+        return f"sb-api-auth-token={self.auth_token}"
+
+    def _format_error_message(self, response, method, url):
+        body = response.text.strip()
+        if len(body) > 1000:
+            body = f"{body[:1000]}..."
+
+        message = (
+            f"Error making {method} request to {url}: "
+            f"{response.status_code} {response.reason}"
+        )
+        if body:
+            message = f"{message}\nResponse body: {body}"
+
+        if url.endswith("/generate-proxy") and response.status_code in (401, 403, 429, 500):
+            message = (
+                f"{message}\n\n"
+                "Udio may require a fresh browser session or an hCaptcha/anti-bot check. "
+                "Open udio.com in your browser, complete any challenge, then pass either "
+                "the refreshed sb-api-auth-token or the full Cookie header to UdioWrapper."
+            )
+        return message
 
     def make_request(self, url, method, data=None, headers=None):
         try:
             if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
+                response = self.session.post(url, headers=headers, json=data, timeout=self.timeout)
             else:
-                response = requests.get(url, headers=headers)
+                response = self.session.get(url, headers=headers, timeout=self.timeout)
             response.raise_for_status()
             return response
+        except requests.exceptions.HTTPError as e:
+            raise UdioWrapperError(self._format_error_message(e.response, method, url)) from e
         except requests.exceptions.RequestException as e:
-            print(f"Error making {method} request to {url}: {e}")
-            return None
+            raise UdioWrapperError(f"Error making {method} request to {url}: {e}") from e
 
     def get_headers(self, get_request=False):
         headers = {
             "Accept": "application/json, text/plain, */*" if get_request else "application/json",
             "Content-Type": "application/json",
-            "Cookie": f"; sb-api-auth-token={self.auth_token}",
+            "Cookie": self._get_cookie_header(),
             "Origin": "https://www.udio.com",
             "Referer": "https://www.udio.com/my-creations",
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
@@ -219,4 +270,3 @@ class UdioWrapper:
             print(f"Downloaded {song_title} with url {song_url} to {file_path}")
         except requests.exceptions.RequestException as e:
             print(f"Failed to download the song. Error: {e}")
-

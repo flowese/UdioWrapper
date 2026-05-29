@@ -56,11 +56,30 @@ pip install git+https://github.com/flowese/UdioWrapper.git
 2. Once registered, open your browser's inspector:
    - In Chrome: `Ctrl+Shift+I` or `F12` on Windows, `Cmd+Option+I` on Mac.
 3. Go to the `Application` tab.
-4. On the left panel, locate and click on `Cookies`, then select the Ideogram website.
+4. On the left panel, locate and click on `Cookies`, then select the Udio website.
 5. Find the cookie named `sb-api-auth-token`.
 6. Click on `sb-api-auth-token` and copy the value in the `Value` field.
 
 ![Udio Wrapper](screen_cookies.jpeg)
+
+### hCaptcha, 500 responses, and stale sessions
+
+Udio can require a fresh browser session or an hCaptcha/anti-bot check before accepting
+requests to `https://www.udio.com/api/generate-proxy`. When that happens, Udio may
+return `500 Internal Server Error` even though the problem is authentication/session
+state rather than a normal server outage.
+
+If generation fails with a 401, 403, 429, or 500 response:
+
+1. Open [Udio](https://www.udio.com/) in your browser.
+2. Sign in and complete any hCaptcha or anti-bot challenge shown by Udio.
+3. Refresh the page.
+4. Copy either the refreshed `sb-api-auth-token` cookie value or the full `Cookie`
+   request header from your browser's network inspector.
+5. Recreate `UdioWrapper` with the refreshed value.
+
+The wrapper does not bypass or automatically solve hCaptcha. It reuses the valid
+browser session that you provide after completing Udio's challenge yourself.
 
 ### Usage
 
@@ -73,6 +92,14 @@ The following examples demonstrate various ways to use the `UdioWrapper` to gene
 ```python
 auth_token = "your-auth-token-here"  # Replace this with your actual authentication token
 udio_wrapper = UdioWrapper(auth_token)
+```
+
+If Udio rejects token-only requests, pass the full browser Cookie header instead
+with or without the leading `Cookie:` label:
+
+```python
+cookies = "sb-api-auth-token=your-auth-token-here; other-cookie=value"
+udio_wrapper = UdioWrapper(cookies=cookies)
 ```
 
 1. Creating a Short Song
