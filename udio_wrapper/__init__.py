@@ -9,6 +9,7 @@ Description: Generates songs using the Udio API using textual prompts.
 import requests
 import os
 import time
+from .hcaptcha_solver import detect_hcaptcha, solve_hcaptcha
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
@@ -17,17 +18,40 @@ class UdioWrapper:
         self.auth_token = auth_token
         self.all_track_ids = []
 
-    def make_request(self, url, method, data=None, headers=None):
-        try:
-            if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
-            else:
-                response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            return response
-        except requests.exceptions.RequestException as e:
-            print(f"Error making {method} request to {url}: {e}")
-            return None
+    def make_request(self, url, method, data=None, headers=None, max_retries=2):
+        for retry in range(max_retries + 1):
+            try:
+                if method == 'POST':
+                    response = requests.post(url, headers=headers, json=data)
+                else:
+                    response = requests.get(url, headers=headers)
+
+                if detect_hcaptcha(response) and retry < max_retries:
+                    print(f"[hCaptcha] Challenge detected, solving (attempt {retry+1})...")
+                    token = solve_hcaptcha(
+                        "a2b4c6d8-e5f7-4908-a123-b456c789d012",
+                        "https://www.udio.com"
+                    )
+                    if token and headers:
+                        headers = dict(headers)
+                        headers["h-captcha-response"] = token
+                    time.sleep(1)
+                    continue
+
+                response.raise_for_status()
+                return response
+            except requests.exceptions.HTTPError as e:
+                if retry < max_retries and e.response is not None and e.response.status_code >= 500:
+                    time.sleep((retry + 1) * 3)
+                    continue
+                print(f"Error making {method} request to {url}: {e}")
+                return None
+            except requests.exceptions.RequestException as e:
+                if retry < max_retries:
+                    time.sleep((retry + 1) * 2)
+                    continue
+                print(f"Error making {method} request to {url}: {e}")
+                return None
 
     def get_headers(self, get_request=False):
         headers = {
