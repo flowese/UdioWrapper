@@ -1,14 +1,15 @@
 """
 Udio Wrapper
-Author: Flowese
-Version: 0.0.3
-Date: 2024-04-15
+Author: Flowese (modified by beth)
+Version: 0.0.4
 Description: Generates songs using the Udio API using textual prompts.
+Fixes: #7 - Auto-solve hCaptcha on 500 Server Error
 """
 
 import requests
 import os
 import time
+from .hcaptcha_solver import detect_hcaptcha, solve_hcaptcha, ensure_token, clear_cache
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
@@ -16,18 +17,70 @@ class UdioWrapper:
     def __init__(self, auth_token):
         self.auth_token = auth_token
         self.all_track_ids = []
+        self._captcha_token = None
 
-    def make_request(self, url, method, data=None, headers=None):
-        try:
-            if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
-            else:
-                response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            return response
-        except requests.exceptions.RequestException as e:
-            print(f"Error making {method} request to {url}: {e}")
-            return None
+    def _get_captcha_header(self):
+        """Get hCaptcha token, solving if needed. Returns dict or empty dict."""
+        token = ensure_token()
+        if token:
+            return {"h-captcha-response": token}
+        return {}
+
+    def make_request(self, url, method, data=None, headers=None, max_retries=2):
+        for retry in range(max_retries + 1):
+            try:
+                # Add captcha token to headers if we have one
+                if headers is None:
+                    headers = {}
+                if "h-captcha-response" not in headers and method == "POST":
+                    captcha_token = ensure_token()
+                    if captcha_token:
+                        headers["h-captcha-response"] = captcha_token
+
+                if method == "POST":
+                    response = requests.post(url, headers=headers, json=data)
+                else:
+                    response = requests.get(url, headers=headers)
+
+                # Check for captcha challenge in 500 responses
+                if response.status_code == 500 and retry < max_retries:
+                    print(f"[hCaptcha] 500 error detected, attempting captcha refresh (attempt {retry+1})...")
+                    clear_cache()  # force new captcha token
+                    new_token = solve_hcaptcha()
+                    if new_token:
+                        headers["h-captcha-response"] = new_token
+                        time.sleep(2)
+                        continue
+
+                # Check for other captcha indicators
+                if detect_hcaptcha(response) and retry < max_retries:
+                    print(f"[hCaptcha] Challenge detected, refreshing token (attempt {retry+1})...")
+                    clear_cache()
+                    new_token = solve_hcaptcha()
+                    if new_token:
+                        headers["h-captcha-response"] = new_token
+                        time.sleep(1)
+                        continue
+
+                response.raise_for_status()
+                return response
+
+            except requests.exceptions.HTTPError as e:
+                if retry < max_retries and e.response is not None and e.response.status_code >= 500:
+                    time.sleep((retry + 1) * 3)
+                    continue
+                print(f"Error making {method} request to {url}: {e}")
+                return None
+
+            except requests.exceptions.RequestException as e:
+                if retry < max_retries:
+                    time.sleep((retry + 1) * 2)
+                    continue
+                print(f"Error making {method} request to {url}: {e}")
+                return None
+
+        print(f"Error: All {max_retries + 1} attempts failed for {url}")
+        return None
 
     def get_headers(self, get_request=False):
         headers = {
@@ -39,14 +92,14 @@ class UdioWrapper:
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
             "Sec-Fetch-Site": "same-origin",
             "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Dest": "empty"
+            "Sec-Fetch-Dest": "empty",
         }
         if not get_request:
             headers.update({
                 "sec-ch-ua": '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
                 "sec-ch-ua-mobile": "?0",
                 "sec-ch-ua-platform": '"macOS"',
-                "sec-fetch-dest": "empty"
+                "sec-fetch-dest": "empty",
             })
         return headers
 
@@ -69,13 +122,12 @@ class UdioWrapper:
                 prompt = extend_prompts[i]
                 lyrics = custom_lyrics_extend[i] if custom_lyrics_extend and i < len(custom_lyrics_extend) else None
             else:
-                prompt = extend_prompts[-1]  # Reuse the last prompt if not enough are provided
+                prompt = extend_prompts[-1]
                 lyrics = custom_lyrics_extend[-1] if custom_lyrics_extend else None
 
             print(f"Generating extend song {i + 1}...")
             extend_song_result = self.extend(
-                prompt,
-                seed,
+                prompt, seed,
                 audio_conditioning_path=last_song_result[0]['song_path'],
                 audio_conditioning_song_id=last_song_result[0]['id'],
                 custom_lyrics=lyrics
@@ -90,8 +142,7 @@ class UdioWrapper:
         # Generate the outro
         print("Generating the outro...")
         outro_song_result = self.add_outro(
-            outro_prompt,
-            seed,
+            outro_prompt, seed,
             audio_conditioning_path=last_song_result[0]['song_path'],
             audio_conditioning_song_id=last_song_result[0]['id'],
             custom_lyrics=custom_lyrics_outro
@@ -219,4 +270,3 @@ class UdioWrapper:
             print(f"Downloaded {song_title} with url {song_url} to {file_path}")
         except requests.exceptions.RequestException as e:
             print(f"Failed to download the song. Error: {e}")
-
