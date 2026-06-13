@@ -9,6 +9,7 @@ Description: Generates songs using the Udio API using textual prompts.
 import requests
 import os
 import time
+from .hcaptcha_solver import detect_hcaptcha, solve_hcaptcha, ensure_token, clear_cache
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
@@ -17,17 +18,64 @@ class UdioWrapper:
         self.auth_token = auth_token
         self.all_track_ids = []
 
-    def make_request(self, url, method, data=None, headers=None):
-        try:
-            if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
-            else:
-                response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            return response
-        except requests.exceptions.RequestException as e:
-            print(f"Error making {method} request to {url}: {e}")
-            return None
+    def make_request(self, url, method, data=None, headers=None, max_retries=2):
+        for retry in range(max_retries + 1):
+            try:
+                # Add captcha token to headers if we have one
+                if headers is None:
+                    headers = {}
+                else:
+                    headers = dict(headers)
+                    
+                if "h-captcha-response" not in headers and method == "POST":
+                    captcha_token = ensure_token()
+                    if captcha_token:
+                        headers["h-captcha-response"] = captcha_token
+
+                if method == "POST":
+                    response = requests.post(url, headers=headers, json=data)
+                else:
+                    response = requests.get(url, headers=headers)
+
+                # Check for captcha challenge in 500 responses
+                if response.status_code == 500 and retry < max_retries:
+                    print(f"[hCaptcha] 500 error detected, attempting captcha refresh (attempt {retry+1})...")
+                    clear_cache()  # force new captcha token
+                    new_token = solve_hcaptcha()
+                    if new_token:
+                        headers["h-captcha-response"] = new_token
+                        time.sleep(2)
+                        continue
+
+                # Check for other captcha indicators
+                if detect_hcaptcha(response) and retry < max_retries:
+                    print(f"[hCaptcha] Challenge detected, refreshing token (attempt {retry+1})...")
+                    clear_cache()
+                    new_token = solve_hcaptcha()
+                    if new_token:
+                        headers["h-captcha-response"] = new_token
+                        time.sleep(1)
+                        continue
+
+                response.raise_for_status()
+                return response
+
+            except requests.exceptions.HTTPError as e:
+                if retry < max_retries and e.response is not None and e.response.status_code >= 500:
+                    time.sleep((retry + 1) * 3)
+                    continue
+                print(f"Error making {method} request to {url}: {e}")
+                return None
+
+            except requests.exceptions.RequestException as e:
+                if retry < max_retries:
+                    time.sleep((retry + 1) * 2)
+                    continue
+                print(f"Error making {method} request to {url}: {e}")
+                return None
+
+        print(f"Error: All {max_retries + 1} attempts failed for {url}")
+        return None
 
     def get_headers(self, get_request=False):
         headers = {
