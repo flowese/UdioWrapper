@@ -9,12 +9,14 @@ Description: Generates songs using the Udio API using textual prompts.
 import requests
 import os
 import time
+from .captcha_solver import HCaptchaSolver
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
+    def __init__(self, auth_token, captcha_api_key=None):
         self.auth_token = auth_token
+        self.captcha_solver = HCaptchaSolver(captcha_api_key) if captcha_api_key else None
         self.all_track_ids = []
 
     def make_request(self, url, method, data=None, headers=None):
@@ -219,4 +221,5 @@ class UdioWrapper:
             print(f"Downloaded {song_title} with url {song_url} to {file_path}")
         except requests.exceptions.RequestException as e:
             print(f"Failed to download the song. Error: {e}")
+
 
