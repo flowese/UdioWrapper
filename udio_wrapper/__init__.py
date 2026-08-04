@@ -1,14 +1,16 @@
 """
 Udio Wrapper
 Author: Flowese
-Version: 0.0.3
-Date: 2024-04-15
+Version: 0.0.4
 Description: Generates songs using the Udio API using textual prompts.
 """
 
 import requests
 import os
 import time
+import json
+import re
+
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
@@ -16,44 +18,98 @@ class UdioWrapper:
     def __init__(self, auth_token):
         self.auth_token = auth_token
         self.all_track_ids = []
+        self.session = requests.Session()
 
-    def make_request(self, url, method, data=None, headers=None):
-        try:
-            if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
-            else:
-                response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            return response
-        except requests.exceptions.RequestException as e:
-            print(f"Error making {method} request to {url}: {e}")
+    def make_request(self, url, method, data=None, headers=None, max_retries=3):
+        for retry in range(max_retries + 1):
+            try:
+                hdrs = headers or self.get_headers(method == 'GET')
+                if method == 'POST':
+                    response = self.session.post(url, headers=hdrs, json=data, timeout=30)
+                else:
+                    response = self.session.get(url, headers=hdrs, timeout=30)
+
+                captcha_token = self._check_captcha(response)
+                if captcha_token and retry < max_retries:
+                    if hdrs is None:
+                        hdrs = {}
+                    hdrs["h-captcha-response"] = captcha_token
+                    hdrs["x-captcha-token"] = captcha_token
+                    time.sleep(2)
+                    continue
+
+                if response.status_code == 200:
+                    body = response.json()
+                    if isinstance(body, dict) and body.get("serverError"):
+                        print(f"Server error in 200 response: {body['serverError']}")
+                        if retry < max_retries:
+                            time.sleep((retry + 1) * 3)
+                            continue
+                        return None
+                    return response
+
+                response.raise_for_status()
+
+            except requests.exceptions.HTTPError as e:
+                status = e.response.status_code if e.response is not None else 0
+                if status >= 500 and retry < max_retries:
+                    wait = (retry + 1) * 3
+                    print(f"HTTP {status}, retrying in {wait}s ({retry+1}/{max_retries})...")
+                    time.sleep(wait)
+                    continue
+                print(f"Error making {method} request to {url}: {e}")
+                if e.response is not None:
+                    print(f"Response: {e.response.text[:500]}")
+                return None
+
+            except requests.exceptions.RequestException as e:
+                if retry < max_retries:
+                    wait = (retry + 1) * 2
+                    print(f"Request failed, retrying in {wait}s ({retry+1}/{max_retries})...")
+                    time.sleep(wait)
+                    continue
+                print(f"Error making {method} request to {url}: {e}")
+                return None
+
+        return None
+
+    def _check_captcha(self, response):
+        if response.status_code not in (403, 429, 503):
             return None
+        text = (response.text or "").lower()
+        captcha_keywords = ["hcaptcha", "captcha", "cf-challenge",
+                            "challenge-running", "are you a robot",
+                            "turnstile", "cf-turnstile"]
+        if not any(k in text for k in captcha_keywords):
+            return None
+        print("Captcha challenge detected by Udio API.")
+        print("To solve manually:")
+        print("1. Open https://www.udio.com in your browser")
+        print("2. Complete the captcha if shown")
+        print("3. Copy the 'h-captcha-response' cookie value")
+        token = input("Paste h-captcha-response token (or press Enter to retry): ").strip()
+        return token or None
 
     def get_headers(self, get_request=False):
         headers = {
             "Accept": "application/json, text/plain, */*" if get_request else "application/json",
             "Content-Type": "application/json",
-            "Cookie": f"; sb-api-auth-token={self.auth_token}",
+            "Cookie": f"sb-api-auth-token={self.auth_token}",
             "Origin": "https://www.udio.com",
             "Referer": "https://www.udio.com/my-creations",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-            "Sec-Fetch-Site": "same-origin",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Dest": "empty"
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
         }
         if not get_request:
             headers.update({
-                "sec-ch-ua": '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
+                "sec-ch-ua": '"Google Chrome";v="125", "Not:A-Brand";v="24", "Chromium";v="125"',
                 "sec-ch-ua-mobile": "?0",
                 "sec-ch-ua-platform": '"macOS"',
-                "sec-fetch-dest": "empty"
             })
         return headers
 
     def create_complete_song(self, short_prompt, extend_prompts, outro_prompt, seed=-1, custom_lyrics_short=None, custom_lyrics_extend=None, custom_lyrics_outro=None, num_extensions=1):
         print("Starting the generation of the complete song sequence...")
 
-        # Generate the short song
         print("Generating the short song...")
         short_song_result = self.create_song(short_prompt, seed, custom_lyrics_short)
         if not short_song_result:
@@ -63,19 +119,17 @@ class UdioWrapper:
         last_song_result = short_song_result
         extend_song_results = []
 
-        # Generate the extend songs
         for i in range(num_extensions):
             if i < len(extend_prompts):
                 prompt = extend_prompts[i]
                 lyrics = custom_lyrics_extend[i] if custom_lyrics_extend and i < len(custom_lyrics_extend) else None
             else:
-                prompt = extend_prompts[-1]  # Reuse the last prompt if not enough are provided
+                prompt = extend_prompts[-1]
                 lyrics = custom_lyrics_extend[-1] if custom_lyrics_extend else None
 
             print(f"Generating extend song {i + 1}...")
             extend_song_result = self.extend(
-                prompt,
-                seed,
+                prompt, seed,
                 audio_conditioning_path=last_song_result[0]['song_path'],
                 audio_conditioning_song_id=last_song_result[0]['id'],
                 custom_lyrics=lyrics
@@ -83,15 +137,12 @@ class UdioWrapper:
             if not extend_song_result:
                 print(f"Error generating extend song {i + 1}.")
                 return None
-
             extend_song_results.append(extend_song_result)
             last_song_result = extend_song_result
 
-        # Generate the outro
         print("Generating the outro...")
         outro_song_result = self.add_outro(
-            outro_prompt,
-            seed,
+            outro_prompt, seed,
             audio_conditioning_path=last_song_result[0]['song_path'],
             audio_conditioning_song_id=last_song_result[0]['id'],
             custom_lyrics=custom_lyrics_outro
@@ -180,7 +231,6 @@ class UdioWrapper:
         return response.json() if response else None
 
     def process_songs(self, track_ids, folder):
-        """Function to process generated songs, wait until they are ready, and download them."""
         print(f"Processing songs in {folder} with track_ids {track_ids}...")
         while True:
             status_result = self.check_song_status(track_ids)
@@ -205,18 +255,17 @@ class UdioWrapper:
             data = response.json()
             all_finished = all(song['finished'] for song in data['songs'])
             return {'all_finished': all_finished, 'data': data}
-        else:
-            return None
+        return None
 
     def download_song(self, song_url, song_title, folder="downloaded_songs"):
         os.makedirs(folder, exist_ok=True)
         file_path = os.path.join(folder, f"{song_title}.mp3")
         try:
-            response = requests.get(song_url)
+            response = self.session.get(song_url, timeout=30)
             response.raise_for_status()
             with open(file_path, 'wb') as file:
                 file.write(response.content)
-            print(f"Downloaded {song_title} with url {song_url} to {file_path}")
+            print(f"Downloaded {song_title} to {file_path}")
         except requests.exceptions.RequestException as e:
             print(f"Failed to download the song. Error: {e}")
 
