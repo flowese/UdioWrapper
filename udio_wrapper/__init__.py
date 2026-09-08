@@ -13,9 +13,40 @@ import time
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
+    def __init__(self, auth_token, captcha_api_key=None, sitekey="204481d6-4444-42ea-a4ff-a04ee7f311ca"):
         self.auth_token = auth_token
+        self.captcha_api_key = captcha_api_key
+        self.sitekey = sitekey
         self.all_track_ids = []
+
+    def _solve_hcaptcha(self, page_url="https://www.udio.com"):
+        if not self.captcha_api_key:
+            return None
+        try:
+            submit_url = "https://api.2captcha.com/in.php"
+
+
+            payload = {
+                'key': self.captcha_api_key,
+                'method': 'hcaptcha',
+                'sitekey': self.sitekey,
+                'pageurl': page_url,
+                'json': 1
+            }
+            response = requests.post(submit_url, data=payload, timeout=20).json()
+            if response.get('status') == 1:
+                task_id = response.get('request')
+                result_url = f"https://2captcha.com{self.captcha_api_key}&action=get&id={task_id}&json=1"
+
+
+                for _ in range(24):
+                    time.sleep(5)
+                    result = requests.get(result_url, timeout=15).json()
+                    if result.get('status') == 1:
+                        return result.get('request')
+            return None
+        except Exception:
+            return None
 
     def make_request(self, url, method, data=None, headers=None):
         try:
@@ -23,11 +54,20 @@ class UdioWrapper:
                 response = requests.post(url, headers=headers, json=data)
             else:
                 response = requests.get(url, headers=headers)
+                
+            if response.status_code == 500 or (response.status_code == 403 and "captcha" in response.text.lower()):
+                captcha_token = self._solve_hcaptcha()
+                if captcha_token and method == 'POST' and isinstance(data, dict):
+                    data["h-captcha-response"] = captcha_token
+                    data["captcha_token"] = captcha_token
+                    response = requests.post(url, headers=headers, json=data)
+                    
             response.raise_for_status()
             return response
         except requests.exceptions.RequestException as e:
             print(f"Error making {method} request to {url}: {e}")
             return None
+
 
     def get_headers(self, get_request=False):
         headers = {
