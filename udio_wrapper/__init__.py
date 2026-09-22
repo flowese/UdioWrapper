@@ -9,25 +9,82 @@ Description: Generates songs using the Udio API using textual prompts.
 import requests
 import os
 import time
+from .hcaptcha_solver import HCaptchaSolver
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
+    def __init__(self, auth_token, captcha_api_key=None, captcha_service="capsolver"):
         self.auth_token = auth_token
         self.all_track_ids = []
 
-    def make_request(self, url, method, data=None, headers=None):
-        try:
-            if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
+        # Initialize hCaptcha solver
+        self._captcha_solver = HCaptchaSolver()
+
+        # Set API key in env if provided via constructor
+        if captcha_api_key:
+            if captcha_service == "2captcha":
+                os.environ["CAPTCHA_API_KEY"] = captcha_api_key
             else:
-                response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            return response
-        except requests.exceptions.RequestException as e:
-            print(f"Error making {method} request to {url}: {e}")
-            return None
+                os.environ["CAPSOLVER_API_KEY"] = captcha_api_key
+
+    def _inject_captcha_header(self, headers):
+        """Inject h-captcha-response header if a captcha token is available."""
+        if headers is None:
+            headers = {}
+        # Only add captcha header if not already present
+        if "h-captcha-response" not in headers:
+            token = self._captcha_solver.get_token()
+            if token:
+                headers = dict(headers)  # Don't mutate caller's dict
+                headers["h-captcha-response"] = token
+        return headers
+
+    def make_request(self, url, method, data=None, headers=None, max_retries=2):
+        for attempt in range(max_retries + 1):
+            try:
+                # Add captcha token for POST requests
+                if method == "POST":
+                    headers = self._inject_captcha_header(headers)
+
+                if method == "POST":
+                    response = requests.post(url, headers=headers, json=data)
+                else:
+                    response = requests.get(url, headers=headers)
+
+                # Check for captcha-related failures
+                if response.status_code in (403, 500, 503) and attempt < max_retries:
+                    print(f"[hCaptcha] {response.status_code} error detected "
+                          f"(attempt {attempt + 1}/{max_retries + 1}), "
+                          f"refreshing captcha token...")
+                    self._captcha_solver.clear_cache()
+                    time.sleep(2)
+                    continue
+
+                response.raise_for_status()
+                return response
+
+            except requests.exceptions.HTTPError as e:
+                if attempt < max_retries:
+                    print(f"[hCaptcha] HTTP error, retrying "
+                          f"(attempt {attempt + 1}/{max_retries + 1}): {e}")
+                    self._captcha_solver.clear_cache()
+                    time.sleep((attempt + 1) * 2)
+                    continue
+                print(f"Error making {method} request to {url}: {e}")
+                return None
+
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries:
+                    print(f"[hCaptcha] Request error, retrying "
+                          f"(attempt {attempt + 1}/{max_retries + 1}): {e}")
+                    time.sleep((attempt + 1) * 2)
+                    continue
+                print(f"Error making {method} request to {url}: {e}")
+                return None
+
+        print(f"Error: All {max_retries + 1} attempts failed for {url}")
+        return None
 
     def get_headers(self, get_request=False):
         headers = {
@@ -219,4 +276,3 @@ class UdioWrapper:
             print(f"Downloaded {song_title} with url {song_url} to {file_path}")
         except requests.exceptions.RequestException as e:
             print(f"Failed to download the song. Error: {e}")
-

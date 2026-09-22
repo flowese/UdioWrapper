@@ -66,6 +66,39 @@ pip install git+https://github.com/flowese/UdioWrapper.git
 
 To use `udio_wrapper`, import the `UdioWrapper` class and provide the necessary parameters.
 
+### hCaptcha Auto-Solving (Fix for 500 Server Error)
+
+Udio's API is protected by hCaptcha challenges which can cause `500 Server Error` responses. This wrapper includes an integrated auto-solver that handles captcha challenges automatically.
+
+**Supported solving methods (in priority order):**
+1. **Capsolver** - Set `CAPSOLVER_API_KEY` environment variable (recommended, most reliable for hCaptcha)
+2. **2captcha** - Set `CAPTCHA_API_KEY` environment variable (budget-friendly alternative)
+3. **Manual input** - If no API key is set, you'll be prompted to paste a token from your browser
+
+**Quick setup with Capsolver (recommended):**
+```bash
+export CAPSOLVER_API_KEY=your_capsolver_key_here
+```
+
+**Or with 2captcha:**
+```bash
+export CAPTCHA_API_KEY=your_2captcha_key_here
+```
+
+**Or pass the key directly to the constructor:**
+```python
+from udio_wrapper import UdioWrapper
+
+# With Capsolver
+udio_wrapper = UdioWrapper(auth_token="your_token", captcha_api_key="caps-...", captcha_service="capsolver")
+
+# With 2captcha
+udio_wrapper = UdioWrapper(auth_token="your_token", captcha_api_key="2cap-...", captcha_service="2captcha")
+
+# Without API key (will prompt for manual token when needed)
+udio_wrapper = UdioWrapper(auth_token="your_token")
+```
+
 ## Usage Examples
 
 The following examples demonstrate various ways to use the `UdioWrapper` to generate music based on different scenarios:

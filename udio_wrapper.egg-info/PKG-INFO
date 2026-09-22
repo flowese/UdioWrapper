@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: udio_wrapper
+Version: 0.0.1
+Summary: Generates songs using the Udio API using textual prompts.
+Author: Flowese
+License-File: LICENSE
+Requires-Dist: requests==2.31.0
+Dynamic: author
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: summary

@@ -1,0 +1,10 @@
+LICENSE
+README.md
+setup.py
+udio_wrapper/__init__.py
+udio_wrapper/hcaptcha_solver.py
+udio_wrapper.egg-info/PKG-INFO
+udio_wrapper.egg-info/SOURCES.txt
+udio_wrapper.egg-info/dependency_links.txt
+udio_wrapper.egg-info/requires.txt
+udio_wrapper.egg-info/top_level.txt
