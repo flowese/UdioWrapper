@@ -156,6 +156,32 @@ Each method in the `UdioWrapper` class can take several parameters to control so
 These parameters allow full customization of the music generation process, from the initial creation through extensions to the final outro, giving users the ability to tailor both the music and lyrics to fit their specific needs or artistic vision.
 
 
+## Auto-solving hCaptcha (issue #7)
+
+Udio's `/generate-proxy` endpoint returns **HTTP 500** when its backend
+cannot verify a valid hCaptcha token. `UdioWrapper` now detects that
+(and 403/503) and automatically solves the invisible hCaptcha challenge,
+then retries the request with the token attached.
+
+To enable auto-solving, provide an API key from a captcha service:
+
+```python
+# 2captcha
+udio_wrapper = UdioWrapper(auth_token, captcha_api_key="YOUR_2CAPTCHA_KEY", captcha_service="2captcha")
+# or Capsolver
+udio_wrapper = UdioWrapper(auth_token, captcha_api_key="YOUR_CAPSOLVER_KEY", captcha_service="capsolver")
+```
+
+You can also set the keys via environment variables (`CAPTCHA_API_KEY` for
+2captcha, `CAPSOLVER_API_KEY` for Capsolver) instead of constructor args.
+
+If no key is set, the wrapper still retries on 5xx/403 (with backoff) and
+prints a hint about configuring a solver — so existing code keeps working
+unchanged.
+
+The Udio hCaptcha sitekey (`2945592b-1928-43a9-8473-7e7fed3d752e`) is
+detected automatically and does not need to be configured.
+
 ## License
 
 This project is licensed under the MIT License.

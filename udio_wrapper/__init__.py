@@ -9,25 +9,76 @@ Description: Generates songs using the Udio API using textual prompts.
 import requests
 import os
 import time
+from .hcaptcha_solver import HCaptchaSolver, is_hcaptcha_blocked
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
+    def __init__(self, auth_token, captcha_api_key=None, captcha_service=None):
         self.auth_token = auth_token
         self.all_track_ids = []
+        self._captcha_solver = HCaptchaSolver(
+            api_key=captcha_api_key, service=captcha_service
+        )
 
-    def make_request(self, url, method, data=None, headers=None):
-        try:
-            if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
-            else:
-                response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            return response
-        except requests.exceptions.RequestException as e:
-            print(f"Error making {method} request to {url}: {e}")
-            return None
+    def _build_headers(self, headers, get_request=False):
+        """Return a copy of headers, injecting an hCaptcha token when present."""
+        if headers is None:
+            headers = {}
+        headers = dict(headers)
+        if not get_request:
+            token = self._captcha_solver.get_token()
+            if token:
+                # Udio's backend validates the token via this header.
+                headers["h-captcha-response"] = token
+        return headers
+
+    def make_request(self, url, method, data=None, headers=None, max_retries=2):
+        last_exc = None
+        for attempt in range(max_retries + 1):
+            try:
+                if method == 'POST':
+                    request_headers = self._build_headers(headers)
+                    request_data = data
+                    token = request_headers.get("h-captcha-response")
+                    if token and isinstance(request_data, dict):
+                        # Some Udio endpoints also expect it in the payload.
+                        request_data = dict(request_data)
+                        request_data["captchaToken"] = token
+                    response = requests.post(url, headers=request_headers, json=request_data)
+                else:
+                    response = requests.get(url, headers=self._build_headers(headers, get_request=True))
+
+                if is_hcaptcha_blocked(response) and attempt < max_retries:
+                    print(
+                        f"hCaptcha: {response.status_code} on {url} "
+                        f"(attempt {attempt + 1}/{max_retries + 1}), "
+                        f"refreshing token and retrying..."
+                    )
+                    self._captcha_solver.clear_cache()
+                    time.sleep(2)
+                    continue
+
+                response.raise_for_status()
+                return response
+            except requests.exceptions.HTTPError as e:
+                last_exc = e
+                if attempt < max_retries:
+                    print(f"hCaptcha: HTTP error, retrying ({attempt + 1}/{max_retries + 1}): {e}")
+                    time.sleep((attempt + 1) * 2)
+                    continue
+                print(f"Error making {method} request to {url}: {e}")
+                return None
+            except requests.exceptions.RequestException as e:
+                last_exc = e
+                if attempt < max_retries:
+                    print(f"hCaptcha: request error, retrying ({attempt + 1}/{max_retries + 1}): {e}")
+                    time.sleep((attempt + 1) * 2)
+                    continue
+                print(f"Error making {method} request to {url}: {e}")
+                return None
+        print(f"Error making {method} request to {url}: {last_exc}")
+        return None
 
     def get_headers(self, get_request=False):
         headers = {
