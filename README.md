@@ -11,6 +11,45 @@ Written by @Flowese
 
 `udio_wrapper` is a Python package that allows you to generate music tracks from Udio's API using textual prompts. This package is designed to interact with Udio's API and is not officially endorsed by Udio.
 
+**Known limitation (Issue #7):** Since April 2024, `POST /api/generate-proxy` returns HTTP 500 (sometimes 403/503) for automated requests. The causes are Udio's human-verification/bot protection, an expired or renamed auth session cookie (see Issue #10), and occasional transient backend errors. There is no supported programmatic way to pass Udio's verification — the human must complete it in their own browser.
+
+To use the wrapper productively:
+
+1. Open https://www.udio.com/ in your own browser and sign in.
+2. Complete any verification challenge the site shows you.
+3. Run one generation manually from the Udio site UI.
+4. Copy a fresh auth cookie: either `sb-api-auth-token` or `sb-ssr-production-auth-token`.
+5. Pass it to `UdioWrapper`, setting `cookie_name` to the matching cookie name, and pause between requests.
+
+Solver integrations (2captcha, CapSolver, NoPECHA, etc.) are intentionally excluded — they would violate Udio's Terms of Service.
+
+### Troubleshooting checklist
+
+- HTTP 401 -> your session cookie expired or was renamed; sign in again and copy a fresh cookie.
+- HTTP 500/403/503 -> a verification/bot-protection refusal; complete the challenge in your browser, then retry with the fresh cookie.
+- HTTP 429 -> you are sending requests too quickly; increase delays.
+- Network error -> check connectivity; the wrapper retries a few times with backoff.
+
+Run `python live_check.py` with `UDIO_AUTH_TOKEN` (and optionally `UDIO_COOKIE_NAME`) set for a one-shot diagnostic that prints the status, body snippet, and next steps.
+
+### Browser-backed client (Issue #7 workaround)
+
+```bash
+pip install playwright
+playwright install chromium
+```
+
+```python
+from udio_wrapper import UdioBrowserClient
+
+with UdioBrowserClient() as client:
+    client.wait_for_login()          # log in + complete any challenge in the open window
+    songs = client.create_song("Relaxing jazz and soulful music")
+    client.download_songs(songs)
+```
+
+Your session persists in `~/.udio_wrapper_browser`, so you normally only log in once. `extend`/`add_outro` are not automated — do those steps in the same browser window.
+
 ## Advantages Over Other Models
 
 Unlike other music generation models, Udio offers a unique feature of extending or conditioning new tracks based on existing ones, making it ideal for iterative and creative music production processes.
@@ -57,7 +96,7 @@ pip install git+https://github.com/flowese/UdioWrapper.git
    - In Chrome: `Ctrl+Shift+I` or `F12` on Windows, `Cmd+Option+I` on Mac.
 3. Go to the `Application` tab.
 4. On the left panel, locate and click on `Cookies`, then select the Ideogram website.
-5. Find the cookie named `sb-api-auth-token`.
+5. Find the cookie named `sb-api-auth-token` (older sessions) or `sb-ssr-production-auth-token` (current sessions, see Issue #10) and copy its value.
 6. Click on `sb-api-auth-token` and copy the value in the `Value` field.
 
 ![Udio Wrapper](screen_cookies.jpeg)
