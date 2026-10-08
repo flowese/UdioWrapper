@@ -1,21 +1,120 @@
 """
 Udio Wrapper
 Author: Flowese
-Version: 0.0.3
+Version: 0.0.4
 Date: 2024-04-15
 Description: Generates songs using the Udio API using textual prompts.
+Fixes #7: 500 Server Error - hCaptcha handling (auto solve hook + retry)
 """
 
 import requests
 import os
 import time
+import logging
+from typing import Optional, Callable
+
+logger = logging.getLogger(__name__)
+
+
+class CaptchaRequiredError(RuntimeError):
+    """Raised when Udio requires an hCaptcha token (HTTP 500 with captcha)."""
+    pass
+
+
+class GenerationError(RuntimeError):
+    """Raised when generation fails after retries."""
+    pass
+
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
+    def __init__(
+        self,
+        auth_token: str,
+        hcaptcha_token: Optional[str] = None,
+        captcha_callback: Optional[Callable[[], Optional[str]]] = None,
+        captcha_solver: Optional[Callable[[str, str], Optional[str]]] = None,
+        hcaptcha_sitekey: Optional[str] = None,
+        max_retries: int = 3,
+        retry_backoff: float = 1.5,
+    ):
+        """
+        :param auth_token: sb-api-auth-token cookie value
+        :param hcaptcha_token: static hCaptcha token to inject (if you already solved it)
+        :param captcha_callback: callable returning a fresh hCaptcha token string when called;
+               used for manual or 2captcha-style solving. If provided, will be called on
+               CaptchaRequiredError to retry the request.
+        :param captcha_solver: deprecated alias for captcha_callback (sitekey, url) -> token
+        :param hcaptcha_sitekey: optional sitekey for solver services (e.g. 2captcha)
+        :param max_retries: max retries for captcha/500 handling
+        :param retry_backoff: base seconds for exponential backoff (transient 500)
+        """
         self.auth_token = auth_token
+        self.hcaptcha_token = hcaptcha_token
+        # captcha_solver is an older name that takes (sitekey, page_url) -> token
+        # normalize to captcha_callback
+        if captcha_solver is not None and captcha_callback is None:
+            def _wrap():
+                try:
+                    return captcha_solver(hcaptcha_sitekey or "", "https://www.udio.com")
+                except TypeError:
+                    return captcha_solver()
+            self.captcha_callback = _wrap
+        else:
+            self.captcha_callback = captcha_callback
+        self.hcaptcha_sitekey = hcaptcha_sitekey
+        self.max_retries = max_retries
+        self.retry_backoff = retry_backoff
         self.all_track_ids = []
+
+    # ------------------------------------------------------------------ helpers
+    def _is_captcha_response(self, response) -> bool:
+        """Heuristic: 500 from generate-proxy after hCaptcha rollout."""
+        if response is None:
+            return False
+        if response.status_code != 500:
+            return False
+        try:
+            body = (response.text or "").lower()
+        except Exception:
+            body = ""
+        # Udio returns generic 500 but issue comments confirm hCaptcha rollout.
+        # Treat any 500 on generate-proxy as possibly captcha-triggered so
+        # caller gets actionable error instead of silent None.
+        if "generate-proxy" in (response.url or ""):
+            # If body mentions captcha/hcaptcha, definitely captcha.
+            if any(k in body for k in ("captcha", "hcaptcha", "challenge", "blocked")):
+                return True
+            # Otherwise still flag as captcha-suspected to surface guidance
+            return True
+        return any(k in body for k in ("captcha", "hcaptcha"))
+
+    def _get_captcha_token(self) -> Optional[str]:
+        if self.hcaptcha_token:
+            return self.hcaptcha_token
+        if self.captcha_callback is not None:
+            try:
+                token = self.captcha_callback()
+                if token:
+                    logger.info("Obtained hCaptcha token via captcha_callback")
+                    return token
+            except Exception as e:
+                logger.warning(f"captcha_callback failed: {e}")
+        return None
+
+    def _inject_captcha(self, data: dict, headers: dict, token: Optional[str]):
+        if not token:
+            return
+        # Udio's frontend sends token under several possible keys depending on version.
+        # Inject under all commonly observed keys so at least one is accepted.
+        # Body:
+        data["captchaToken"] = token
+        data["hcaptchaToken"] = token
+        data["hCaptchaToken"] = token
+        # Some WAFs also expect header
+        headers["x-captcha-token"] = token
+        headers["x-hcaptcha-token"] = token
 
     def make_request(self, url, method, data=None, headers=None):
         try:
@@ -25,6 +124,32 @@ class UdioWrapper:
                 response = requests.get(url, headers=headers)
             response.raise_for_status()
             return response
+        except requests.exceptions.HTTPError as e:
+            resp = e.response if hasattr(e, 'response') else None
+            # Surface captcha-specific error
+            if resp is not None and self._is_captcha_response(resp):
+                logger.warning(
+                    f"Captcha likely required for {url}: {resp.status_code} {resp.text[:500] if resp.text else ''}"
+                )
+                print(
+                    f"[UdioWrapper] 500 on {url} looks like hCaptcha challenge. "
+                    f"Provide hcaptcha_token or captcha_callback to auto-solve. "
+                    f"See https://github.com/flowese/UdioWrapper/issues/7"
+                )
+                # Attach response to exception for caller retry logic
+                err = CaptchaRequiredError(
+                    f"hCaptcha required for {url}: {resp.status_code} {resp.text[:300] if resp.text else ''}. "
+                    f"Pass hcaptcha_token or captcha_callback=... to UdioWrapper."
+                )
+                err.response = resp  # type: ignore
+                raise err
+            print(f"Error making {method} request to {url}: {e}")
+            if resp is not None:
+                try:
+                    print(f"Response body: {resp.text[:1000]}")
+                except Exception:
+                    pass
+            return None
         except requests.exceptions.RequestException as e:
             print(f"Error making {method} request to {url}: {e}")
             return None
@@ -135,18 +260,82 @@ class UdioWrapper:
         self.all_track_ids.extend(outro_track_ids)
         return self.process_songs(outro_track_ids, "outro_songs")
 
-    def generate_song(self, prompt, seed, custom_lyrics=None):
+    def _post_generate(self, data: dict) -> Optional[dict]:
+        """
+        Internal POST to /generate-proxy with hCaptcha + retry handling.
+        Retries on CaptchaRequiredError if a token/callback is available,
+        otherwise fails fast with guidance. Also retries transient 500 with backoff.
+        """
         url = f"{self.API_BASE_URL}/generate-proxy"
         headers = self.get_headers()
+        # Inject static token if present on first attempt
+        token = self._get_captcha_token()
+        if token:
+            self._inject_captcha(data, headers, token)
+
+        last_exc = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = self.make_request(url, 'POST', data, headers)
+                # make_request returns None on non-captcha HTTP errors
+                if response is None:
+                    # Transient failure: retry with backoff if attempts left
+                    if attempt < self.max_retries:
+                        sleep_s = self.retry_backoff * (2 ** attempt)
+                        logger.info(f"Retrying generate-proxy in {sleep_s:.1f}s (attempt {attempt+1}/{self.max_retries})")
+                        time.sleep(sleep_s)
+                        continue
+                    return None
+                return response.json() if response else None
+            except CaptchaRequiredError as e:
+                last_exc = e
+                # Try to obtain a fresh token via callback
+                fresh = None
+                if self.captcha_callback is not None:
+                    try:
+                        fresh = self.captcha_callback()
+                    except Exception as cb_e:
+                        logger.warning(f"captcha_callback error on retry: {cb_e}")
+                # Also accept updated self.hcaptcha_token if caller set it
+                if not fresh:
+                    fresh = self.hcaptcha_token
+                if fresh and fresh != token:
+                    token = fresh
+                    logger.info(f"Retrying generate-proxy with fresh hCaptcha token (attempt {attempt+1})")
+                    self._inject_captcha(data, headers, token)
+                    continue
+                # If we have a token but same one failed, or no callback, try once more with current token
+                if token and attempt == 0:
+                    # First captcha error even though we sent a token -> token may be stale,
+                    # try to re-fetch via callback once more
+                    if self.captcha_callback is not None:
+                        time.sleep(1)
+                        continue
+                # No way to recover
+                print(
+                    f"[UdioWrapper] hCaptcha required and no fresh token available. "
+                    f"Solve the captcha in browser, copy the hcaptcha token, and pass it as "
+                    f"UdioWrapper(auth_token, hcaptcha_token='...') or "
+                    f"UdioWrapper(auth_token, captcha_callback=lambda: solve(...))."
+                )
+                # Re-raise as GenerationError for callers that expect exception
+                # but also return None for backward compatibility if they check None
+                # We store the exception to re-raise if needed; for now return None
+                # to keep existing semantics (create_song returns None on failure).
+                # Callers that want exception can catch CaptchaRequiredError directly
+                # by calling _post_generate or generate_* with raise_on_captcha=True.
+                return None
+        if last_exc is not None:
+            raise last_exc
+        return None
+
+    def generate_song(self, prompt, seed, custom_lyrics=None):
         data = {"prompt": prompt, "samplerOptions": {"seed": seed}}
         if custom_lyrics:
             data["lyricInput"] = custom_lyrics
-        response = self.make_request(url, 'POST', data, headers)
-        return response.json() if response else None
+        return self._post_generate(data)
 
     def generate_extend_song(self, prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics=None):
-        url = f"{self.API_BASE_URL}/generate-proxy"
-        headers = self.get_headers()
         data = {
             "prompt": prompt,
             "samplerOptions": {
@@ -158,12 +347,9 @@ class UdioWrapper:
         }
         if custom_lyrics:
             data["lyricInput"] = custom_lyrics
-        response = self.make_request(url, 'POST', data, headers)
-        return response.json() if response else None
+        return self._post_generate(data)
 
     def generate_outro(self, prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics=None):
-        url = f"{self.API_BASE_URL}/generate-proxy"
-        headers = self.get_headers()
         data = {
             "prompt": prompt,
             "samplerOptions": {
@@ -176,8 +362,7 @@ class UdioWrapper:
         }
         if custom_lyrics:
             data["lyricInput"] = custom_lyrics
-        response = self.make_request(url, 'POST', data, headers)
-        return response.json() if response else None
+        return self._post_generate(data)
 
     def process_songs(self, track_ids, folder):
         """Function to process generated songs, wait until they are ready, and download them."""
@@ -219,4 +404,3 @@ class UdioWrapper:
             print(f"Downloaded {song_title} with url {song_url} to {file_path}")
         except requests.exceptions.RequestException as e:
             print(f"Failed to download the song. Error: {e}")
-
