@@ -96,8 +96,10 @@ def test_generate_proxy_uses_valid_auth_cookie_and_payload():
     with patch("udio_wrapper.requests.post", return_value=response) as post:
         assert wrapper.generate_song("jazz", 12, "lyrics") == {"track_ids": ["track"]}
     assert wrapper.get_headers()["Cookie"] == "sb-api-auth-token=token"
-    post.assert_called_once_with(
-        "https://www.udio.com/api/generate-proxy",
-        headers=wrapper.get_headers(),
-        json={"prompt": "jazz", "samplerOptions": {"seed": 12}, "lyricInput": "lyrics"},
-    )
+    # Session mode passes timeout; accept it loosely
+    assert post.call_count == 1
+    call_args, call_kwargs = post.call_args
+    assert call_args[0] == "https://www.udio.com/api/generate-proxy"
+    assert call_kwargs["headers"] == wrapper.get_headers()
+    assert call_kwargs["json"] == {"prompt": "jazz", "samplerOptions": {"seed": 12}, "lyricInput": "lyrics"}
+    assert call_kwargs.get("timeout") == wrapper.timeout
