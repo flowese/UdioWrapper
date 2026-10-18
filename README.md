@@ -50,21 +50,46 @@ pip install git+https://github.com/flowese/UdioWrapper.git
 
 ## Configuration
 
-### Obtaining the Authorization Token
+### ⚠️ Important: Udio API & Authentication Status
+
+**Udio does not currently offer a public API.** The following endpoints are **invalid/unavailable**:
+- `https://www.udio.com/api/generate-proxy` — Not accessible publicly
+- `https://www.udio.com/api/` — No public API available
+- Udio website does not provide an option to create API keys
+
+### ⚠️ Critical: Cookie-based Authentication No Longer Working
+
+**The session-based authentication method using `sb-api-auth-token` cookie is no longer functioning.** As of the latest updates, Udio has changed their authentication mechanism and the cookie extraction method described below **does not work anymore**.
+
+The wrapper was designed to use **session-based authentication** via the `sb-api-auth-token` cookie from your browser session, but this method is currently broken due to changes on Udio's end.
+
+#### Previously Documented Method (No Longer Functional)
+
+<details>
+<summary>Historical reference - this method no longer works</summary>
 
 1. Sign up at [Udio](https://www.udio.com/).
-2. Once registered, open your browser's inspector:
-   - In Chrome: `Ctrl+Shift+I` or `F12` on Windows, `Cmd+Option+I` on Mac.
-3. Go to the `Application` tab.
-4. On the left panel, locate and click on `Cookies`, then select the Ideogram website.
-5. Find the cookie named `sb-api-auth-token`.
-6. Click on `sb-api-auth-token` and copy the value in the `Value` field.
+2. Once registered and logged in, open your browser's dev tools:
+   - Chrome/Edge: `Ctrl+Shift+I` or `F12` (Windows), `Cmd+Option+I` (Mac)
+   - Firefox: `Ctrl+Shift+I` or `F12`
+3. Go to the **Application** tab.
+4. On the left panel, expand **Cookies** → click on `https://www.udio.com`
+5. Find the cookie named **`sb-api-auth-token`** and copy its **Value**.
 
 ![Udio Wrapper](screen_cookies.jpeg)
 
-### Usage
+</details>
 
-To use `udio_wrapper`, import the `UdioWrapper` class and provide the necessary parameters.
+### Current Status
+
+- **Public API**: Not available
+- **API Key Generation**: Not available on Udio website  
+- **Cookie-based Auth (`sb-api-auth-token`)**: No longer working
+- **hCaptcha**: Required on `/generate-proxy` endpoint (returns 500 without valid token)
+
+This wrapper includes an **hCaptcha auto-solver** (using 2captcha or Capsolver) to handle the 500 Server Error, but **cannot function without a valid authentication method**.
+
+**If you discover a working authentication method, please contribute by opening a PR!**
 
 ## Usage Examples
 
@@ -156,6 +181,32 @@ Each method in the `UdioWrapper` class can take several parameters to control so
 These parameters allow full customization of the music generation process, from the initial creation through extensions to the final outro, giving users the ability to tailor both the music and lyrics to fit their specific needs or artistic vision.
 
 
+## Auto-solving hCaptcha (issue #7)
+
+Udio's `/generate-proxy` endpoint returns **HTTP 500** when its backend
+cannot verify a valid hCaptcha token. `UdioWrapper` now detects that
+(and 403/503) and automatically solves the invisible hCaptcha challenge,
+then retries the request with the token attached.
+
+To enable auto-solving, provide an API key from a captcha service:
+
+```python
+# 2captcha
+udio_wrapper = UdioWrapper(auth_token, captcha_api_key="YOUR_2CAPTCHA_KEY", captcha_service="2captcha")
+# or Capsolver
+udio_wrapper = UdioWrapper(auth_token, captcha_api_key="YOUR_CAPSOLVER_KEY", captcha_service="capsolver")
+```
+
+You can also set the keys via environment variables (`CAPTCHA_API_KEY` for
+2captcha, `CAPSOLVER_API_KEY` for Capsolver) instead of constructor args.
+
+If no key is set, the wrapper still retries on 5xx/403 (with backoff) and
+prints a hint about configuring a solver — so existing code keeps working
+unchanged.
+
+The Udio hCaptcha sitekey (`2945592b-1928-43a9-8473-7e7fed3d752e`) is
+detected automatically and does not need to be configured.
+
 ## License
 
 This project is licensed under the MIT License.
@@ -172,3 +223,45 @@ If you'd like to contribute to this project, feel free to fork the repository an
 - Implement a user-friendly web interface for easier interaction with the API.
 
 -----
+
+## Added Features
+
+### hCaptcha Auto-Solver for 500 Server Error
+
+Fixed issue #7 where Udio's API returned HTTP 500 errors due to hCaptcha verification. The updated library now supports automatic hCaptcha solving through:
+
+1. **2captcha Integration**: Provide a 2captcha API key for automatic solving
+2. **Capsolver Integration**: Provide a Capsolver API key for automatic solving  
+3. **Manual Token Injection**: Provide a pre-solved hCaptcha token
+4. **Custom Callback**: Provide a custom function to solve captchas
+
+### Key Improvements
+
+- **Automatic Detection**: The library automatically detects hCaptcha-related 500 errors
+- **Retry Logic**: Implements exponential backoff with up to 3 retry attempts
+- **Token Management**: Caches tokens with 30-minute TTL and automatically refreshes
+- **Multiple Solving Options**: Support for multiple captcha solving services
+- **Graceful Degradation**: Works without API keys (returns clear error messages)
+- **Backward Compatibility**: Existing code continues to work unchanged
+
+### Usage Examples
+
+```python
+# Manual token injection (solve hCaptcha in browser first)
+wrapper = UdioWrapper(auth_token, hcaptcha_token="your_solved_token_here")
+
+# Automatic solving with 2captcha
+wrapper = UdioWrapper(auth_token, captcha_api_key="your_2captcha_key", captcha_service="2captcha")
+
+# Automatic solving with Capsolver
+wrapper = UdioWrapper(auth_token, captcha_api_key="your_capsolver_key", captcha_service="capsolver")
+
+# Custom solving logic
+def solve_hcaptcha():
+    # Your custom captcha solving logic here
+    return "solved_token_from_your_method"
+
+wrapper = UdioWrapper(auth_token, captcha_callback=solve_hcaptcha)
+```
+
+This implementation preserves all existing functionality while adding robust hCaptcha solving capabilities that maintain the original API.
