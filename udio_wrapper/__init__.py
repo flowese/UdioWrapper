@@ -13,9 +13,19 @@ import time
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
+    def __init__(self, auth_token, captcha_token=None, captcha_solver=None):
         self.auth_token = auth_token
+        self.captcha_token = captcha_token or os.environ.get("UDIO_CAPTCHA_TOKEN")
+        self.captcha_solver = captcha_solver
         self.all_track_ids = []
+
+    def _resolve_captcha_token(self):
+        if callable(self.captcha_solver):
+            try:
+                return self.captcha_solver()
+            except Exception:
+                pass
+        return self.captcha_token
 
     def make_request(self, url, method, data=None, headers=None):
         try:
@@ -139,6 +149,9 @@ class UdioWrapper:
         url = f"{self.API_BASE_URL}/generate-proxy"
         headers = self.get_headers()
         data = {"prompt": prompt, "samplerOptions": {"seed": seed}}
+        cap = self._resolve_captcha_token()
+        if cap:
+            data["captchaToken"] = cap
         if custom_lyrics:
             data["lyricInput"] = custom_lyrics
         response = self.make_request(url, 'POST', data, headers)
