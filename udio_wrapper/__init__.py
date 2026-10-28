@@ -9,31 +9,50 @@ Description: Generates songs using the Udio API using textual prompts.
 import requests
 import os
 import time
+import math
+from numbers import Real
+
+from .errors import (
+    UdioAuthenticationError,
+    UdioChallengeError,
+    UdioHTTPError,
+    raise_for_udio_error,
+)
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
+    def __init__(self, auth_token, timeout=30):
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, Real)
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise ValueError("timeout must be a finite positive number of seconds")
         self.auth_token = auth_token
+        self.timeout = timeout
         self.all_track_ids = []
 
     def make_request(self, url, method, data=None, headers=None):
-        try:
-            if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
-            else:
-                response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            return response
-        except requests.exceptions.RequestException as e:
-            print(f"Error making {method} request to {url}: {e}")
-            return None
+        """Make one request and propagate failures instead of returning None."""
+        method = method.upper()
+        if method == 'POST':
+            response = requests.post(
+                url, headers=headers, json=data, timeout=self.timeout
+            )
+        elif method == 'GET':
+            response = requests.get(url, headers=headers, timeout=self.timeout)
+        else:
+            raise ValueError("method must be GET or POST")
+        raise_for_udio_error(response)
+        return response
 
     def get_headers(self, get_request=False):
         headers = {
             "Accept": "application/json, text/plain, */*" if get_request else "application/json",
             "Content-Type": "application/json",
-            "Cookie": f"; sb-api-auth-token={self.auth_token}",
+            "Cookie": f"sb-api-auth-token={self.auth_token}",
             "Origin": "https://www.udio.com",
             "Referer": "https://www.udio.com/my-creations",
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
