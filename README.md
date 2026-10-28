@@ -66,6 +66,74 @@ pip install git+https://github.com/flowese/UdioWrapper.git
 
 To use `udio_wrapper`, import the `UdioWrapper` class and provide the necessary parameters.
 
+### Request failures and human verification
+
+API request failures now raise exceptions instead of printing an error and
+returning `None`. Update code that previously treated `None` as a request failure.
+Successful generation payloads and method arguments are unchanged.
+
+```python
+import requests
+from udio_wrapper import (
+    UdioWrapper, UdioAuthenticationError, UdioChallengeError, UdioHTTPError,
+)
+
+wrapper = UdioWrapper(auth_token, timeout=30)
+try:
+    result = wrapper.create_song("Relaxing jazz")
+except UdioChallengeError:
+    print("Open Udio in your normal browser and complete human verification.")
+except UdioAuthenticationError:
+    print("Review your Udio sign-in and authentication configuration.")
+except UdioHTTPError as error:
+    print("Udio returned HTTP", error.response.status_code)
+except requests.exceptions.Timeout:
+    print("Request timed out. Check Udio before submitting another generation.")
+except requests.exceptions.RequestException:
+    print("The request failed. Check your connection and Udio's availability.")
+```
+
+`timeout` is a positive finite number of seconds, defaulting to 30. It sets the
+Requests connect/read timeout for API calls; it is not a deadline for an entire
+song generation or polling loop. Transport failures retain their Requests
+exception types. HTTP failures expose the original response and request via
+`error.response` and `error.request` and inherit from `requests.HTTPError`.
+
+The wrapper recognizes explicit JSON error codes such as `captcha_required`,
+`hcaptcha_required`, `human_verification_required`, and
+`captcha_verification_required` in `error`, `code`, or `error_code` (also inside
+an `error` object), or an HTML element with the `h-captcha` class. Inspection is
+limited to the first 8 KiB of a response; unrecognized failures remain generic
+HTTP errors. HTTP 403 or 500 alone does not establish that a CAPTCHA caused the
+failure. A successful JSON response that merely mentions CAPTCHA in its prompt
+is not a challenge.
+
+When human verification is required, use Udio in your normal browser and
+complete its verification yourself. Browser verification may not enable this
+wrapper's API access; continue in the browser if access remains blocked. This
+change does not solve CAPTCHAs automatically or bypass access restrictions.
+
+Generation POST requests are not retried automatically. After a timeout or
+service error, check your Udio account before submitting another request: the
+server may already have created a job. API error messages omit the response body,
+request headers, prompt and URL. The retained response/request objects and
+underlying Requests transport exceptions can contain sensitive data; avoid
+posting them or authentication cookies in public reports.
+
+### Offline tests
+
+From a checkout, install the existing requirements and run the standard-library
+test runner. The tests mock HTTP requests; they need no Udio account or tokens.
+
+```bash
+python -m pip install -r requirements.txt
+python -m unittest discover -s tests -v
+```
+
+Passing these tests verifies local error handling. It does not establish that
+Udio's private API currently accepts generation requests, resolve all of issue
+[#7](https://github.com/flowese/UdioWrapper/issues/7), or confirm bounty eligibility.
+
 ## Usage Examples
 
 The following examples demonstrate various ways to use the `UdioWrapper` to generate music based on different scenarios:
