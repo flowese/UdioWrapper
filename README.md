@@ -156,6 +156,60 @@ Each method in the `UdioWrapper` class can take several parameters to control so
 These parameters allow full customization of the music generation process, from the initial creation through extensions to the final outro, giving users the ability to tailor both the music and lyrics to fit their specific needs or artistic vision.
 
 
+## Handling 500 Server Error & hCaptcha Verification (Issue #7)
+
+Udio's backend requires an **hCaptcha verification token** for song generation on `/api/generate-proxy`. When a request is made without a captcha token, Udio's API returns:
+```
+Error making POST request to https://www.udio.com/api/generate-proxy: 500 Server Error: Internal Server Error
+```
+
+`UdioWrapper` provides multiple ways to resolve this:
+
+### 1. Providing a Captcha Token Directly
+Pass a valid hCaptcha response token (from your browser session or solver):
+```python
+udio_wrapper = UdioWrapper(auth_token, captcha_token="YOUR_HCAPTCHA_TOKEN")
+```
+Or via environment variable:
+```bash
+export UDIO_CAPTCHA_TOKEN="YOUR_HCAPTCHA_TOKEN"
+```
+You can also pass `captcha_token` per request:
+```python
+udio_wrapper.create_song("Lo-fi hip hop beat", captcha_token="YOUR_HCAPTCHA_TOKEN")
+```
+
+### 2. Using a Dynamic Solver Callback
+Provide a callable function that resolves or fetches a fresh token dynamically:
+```python
+def solve_captcha():
+    # Your custom solver or browser automation logic
+    return "FRESH_HCAPTCHA_TOKEN"
+
+udio_wrapper = UdioWrapper(auth_token, captcha_solver=solve_captcha)
+```
+
+### 3. Automated Captcha Solving Services (2captcha / Capsolver)
+`UdioWrapper` can automatically solve challenges using 2captcha or Capsolver:
+```python
+# Using 2captcha
+udio_wrapper = UdioWrapper(
+    auth_token,
+    captcha_api_key="YOUR_2CAPTCHA_KEY",
+    captcha_service="2captcha"
+)
+
+# Using Capsolver
+udio_wrapper = UdioWrapper(
+    auth_token,
+    captcha_api_key="YOUR_CAPSOLVER_KEY",
+    captcha_service="capsolver"
+)
+```
+Or set `CAPTCHA_API_KEY` / `CAPSOLVER_API_KEY` in your environment.
+The sitekey used by Udio (`2945592b-1928-43a9-8473-7e7fed3d752e`) is automatically handled.
+
+
 ## License
 
 This project is licensed under the MIT License.
