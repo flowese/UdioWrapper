@@ -64,7 +64,29 @@ pip install git+https://github.com/flowese/UdioWrapper.git
 
 ### Usage
 
-To use `udio_wrapper`, import the `UdioWrapper` class and provide the necessary parameters.
+To use `udio_wrapper`, import the `UdioWrapper` class and provide your authentication token along with an optional hCaptcha token or solver configuration when Udio requires human verification on `/api/generate-proxy`.
+
+```python
+# Automatic hCaptcha solving via CapSolver or 2Captcha
+udio_wrapper = UdioWrapper(
+    auth_token="your-auth-token-here",
+    capsolver_api_key="CAP-...",  # or twocaptcha_api_key="...", or set CAPSOLVER_API_KEY env var
+)
+
+# Or provide a custom solver callback / static captcha_token
+udio_wrapper = UdioWrapper(
+    auth_token="your-auth-token-here",
+    captcha_solver=lambda sitekey, page_url: my_custom_solver(sitekey, page_url),
+)
+
+# Split Supabase SSR cookies (sb-api-auth-token.0 and sb-api-auth-token.1) are also supported:
+udio_wrapper = UdioWrapper(
+    auth_token="",
+    auth_token_0="part-0-value",
+    auth_token_1="part-1-value",
+    capsolver_api_key="CAP-...",
+)
+```
 
 ## Usage Examples
 
