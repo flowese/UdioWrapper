@@ -1,9 +1,9 @@
 """
 Udio Wrapper
 Author: Flowese
-Version: 0.0.3
-Date: 2024-04-15
-Description: Generates songs using the Udio API using textual prompts.
+Version: 0.0.4 (hCaptcha Fix)
+Date: 2026
+Description: Generates songs using the Udio API using textual prompts, with hCaptcha token support.
 """
 
 import requests
@@ -33,7 +33,7 @@ class UdioWrapper:
         headers = {
             "Accept": "application/json, text/plain, */*" if get_request else "application/json",
             "Content-Type": "application/json",
-            "Cookie": f"; sb-api-auth-token={self.auth_token}",
+            "Cookie": f"sb-api-auth-token={self.auth_token}",
             "Origin": "https://www.udio.com",
             "Referer": "https://www.udio.com/my-creations",
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
@@ -50,12 +50,12 @@ class UdioWrapper:
             })
         return headers
 
-    def create_complete_song(self, short_prompt, extend_prompts, outro_prompt, seed=-1, custom_lyrics_short=None, custom_lyrics_extend=None, custom_lyrics_outro=None, num_extensions=1):
+    def create_complete_song(self, short_prompt, extend_prompts, outro_prompt, seed=-1, custom_lyrics_short=None, custom_lyrics_extend=None, custom_lyrics_outro=None, num_extensions=1, hcaptcha_token=None):
         print("Starting the generation of the complete song sequence...")
 
         # Generate the short song
         print("Generating the short song...")
-        short_song_result = self.create_song(short_prompt, seed, custom_lyrics_short)
+        short_song_result = self.create_song(short_prompt, seed, custom_lyrics_short, hcaptcha_token=hcaptcha_token)
         if not short_song_result:
             print("Error generating the short song.")
             return None
@@ -69,7 +69,7 @@ class UdioWrapper:
                 prompt = extend_prompts[i]
                 lyrics = custom_lyrics_extend[i] if custom_lyrics_extend and i < len(custom_lyrics_extend) else None
             else:
-                prompt = extend_prompts[-1]  # Reuse the last prompt if not enough are provided
+                prompt = extend_prompts[-1]
                 lyrics = custom_lyrics_extend[-1] if custom_lyrics_extend else None
 
             print(f"Generating extend song {i + 1}...")
@@ -78,7 +78,8 @@ class UdioWrapper:
                 seed,
                 audio_conditioning_path=last_song_result[0]['song_path'],
                 audio_conditioning_song_id=last_song_result[0]['id'],
-                custom_lyrics=lyrics
+                custom_lyrics=lyrics,
+                hcaptcha_token=hcaptcha_token
             )
             if not extend_song_result:
                 print(f"Error generating extend song {i + 1}.")
@@ -94,7 +95,8 @@ class UdioWrapper:
             seed,
             audio_conditioning_path=last_song_result[0]['song_path'],
             audio_conditioning_song_id=last_song_result[0]['id'],
-            custom_lyrics=custom_lyrics_outro
+            custom_lyrics=custom_lyrics_outro,
+            hcaptcha_token=hcaptcha_token
         )
         if not outro_song_result:
             print("Error generating the outro.")
@@ -107,17 +109,17 @@ class UdioWrapper:
             "outro_song": outro_song_result
         }
 
-    def create_song(self, prompt, seed=-1, custom_lyrics=None):
-        song_result = self.generate_song(prompt, seed, custom_lyrics)
+    def create_song(self, prompt, seed=-1, custom_lyrics=None, hcaptcha_token=None):
+        song_result = self.generate_song(prompt, seed, custom_lyrics, hcaptcha_token)
         if not song_result:
             return None
         track_ids = song_result.get('track_ids', [])
         self.all_track_ids.extend(track_ids)
         return self.process_songs(track_ids, "short_songs")
 
-    def extend(self, prompt, seed=-1, audio_conditioning_path=None, audio_conditioning_song_id=None, custom_lyrics=None):
+    def extend(self, prompt, seed=-1, audio_conditioning_path=None, audio_conditioning_song_id=None, custom_lyrics=None, hcaptcha_token=None):
         extend_song_result = self.generate_extend_song(
-            prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics
+            prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics, hcaptcha_token
         )
         if not extend_song_result:
             return None
@@ -125,9 +127,9 @@ class UdioWrapper:
         self.all_track_ids.extend(extend_track_ids)
         return self.process_songs(extend_track_ids, "extend_songs")
 
-    def add_outro(self, prompt, seed=-1, audio_conditioning_path=None, audio_conditioning_song_id=None, custom_lyrics=None):
+    def add_outro(self, prompt, seed=-1, audio_conditioning_path=None, audio_conditioning_song_id=None, custom_lyrics=None, hcaptcha_token=None):
         outro_result = self.generate_outro(
-            prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics
+            prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics, hcaptcha_token
         )
         if not outro_result:
             return None
@@ -135,16 +137,18 @@ class UdioWrapper:
         self.all_track_ids.extend(outro_track_ids)
         return self.process_songs(outro_track_ids, "outro_songs")
 
-    def generate_song(self, prompt, seed, custom_lyrics=None):
+    def generate_song(self, prompt, seed, custom_lyrics=None, hcaptcha_token=None):
         url = f"{self.API_BASE_URL}/generate-proxy"
         headers = self.get_headers()
         data = {"prompt": prompt, "samplerOptions": {"seed": seed}}
         if custom_lyrics:
             data["lyricInput"] = custom_lyrics
+        if hcaptcha_token:
+            data["hcaptchaToken"] = hcaptcha_token
         response = self.make_request(url, 'POST', data, headers)
         return response.json() if response else None
 
-    def generate_extend_song(self, prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics=None):
+    def generate_extend_song(self, prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics=None, hcaptcha_token=None):
         url = f"{self.API_BASE_URL}/generate-proxy"
         headers = self.get_headers()
         data = {
@@ -158,10 +162,12 @@ class UdioWrapper:
         }
         if custom_lyrics:
             data["lyricInput"] = custom_lyrics
+        if hcaptcha_token:
+            data["hcaptchaToken"] = hcaptcha_token
         response = self.make_request(url, 'POST', data, headers)
         return response.json() if response else None
 
-    def generate_outro(self, prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics=None):
+    def generate_outro(self, prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics=None, hcaptcha_token=None):
         url = f"{self.API_BASE_URL}/generate-proxy"
         headers = self.get_headers()
         data = {
@@ -176,6 +182,8 @@ class UdioWrapper:
         }
         if custom_lyrics:
             data["lyricInput"] = custom_lyrics
+        if hcaptcha_token:
+            data["hcaptchaToken"] = hcaptcha_token
         response = self.make_request(url, 'POST', data, headers)
         return response.json() if response else None
 
@@ -219,4 +227,3 @@ class UdioWrapper:
             print(f"Downloaded {song_title} with url {song_url} to {file_path}")
         except requests.exceptions.RequestException as e:
             print(f"Failed to download the song. Error: {e}")
-
