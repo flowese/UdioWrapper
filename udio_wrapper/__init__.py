@@ -10,24 +10,113 @@ import requests
 import os
 import time
 
+
+class UdioError(Exception):
+    """Base exception for Udio Wrapper errors."""
+
+
+class UdioRequestError(UdioError):
+    """Raised when an HTTP request or response cannot be processed."""
+
+    def __init__(self, message, url=None, status_code=None, response_text=None):
+        super().__init__(message)
+        self.url = url
+        self.status_code = status_code
+        self.response_text = response_text
+
+
+class UdioChallengeError(UdioRequestError):
+    """Raised when Udio requires a browser challenge or CAPTCHA."""
+
+
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
+    def __init__(self, auth_token, raise_on_error=False, timeout=30):
         self.auth_token = auth_token
         self.all_track_ids = []
+        self.raise_on_error = raise_on_error
+        self.timeout = timeout
+
+    def _is_challenge_response(self, response):
+        response_text = response.text.lower()
+        challenge_markers = (
+            "hcaptcha",
+            "h-captcha",
+            "captcha",
+            "challenge",
+            "cf-chl",
+            "just a moment",
+        )
+        return any(marker in response_text for marker in challenge_markers)
+
+    def _handle_request_error(self, message, url=None, status_code=None, response_text=None, challenge=False):
+        if challenge:
+            error = UdioChallengeError(
+                message,
+                url=url,
+                status_code=status_code,
+                response_text=response_text,
+            )
+        else:
+            error = UdioRequestError(
+                message,
+                url=url,
+                status_code=status_code,
+                response_text=response_text,
+            )
+
+        if self.raise_on_error:
+            raise error
+
+        print(message)
+        return None
+
+    def _response_json(self, response):
+        try:
+            return response.json()
+        except (ValueError, requests.exceptions.JSONDecodeError) as e:
+            message = f"Error decoding JSON response from {response.url}: {e}"
+            self._handle_request_error(
+                message,
+                url=response.url,
+                status_code=response.status_code,
+                response_text=response.text,
+            )
+            return None
 
     def make_request(self, url, method, data=None, headers=None):
         try:
             if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
+                response = requests.post(url, headers=headers, json=data, timeout=self.timeout)
             else:
-                response = requests.get(url, headers=headers)
+                response = requests.get(url, headers=headers, timeout=self.timeout)
+
+            if not response.ok and self._is_challenge_response(response):
+                message = (
+                    f"Udio challenge detected while making {method} request to {url}. "
+                    "Complete the browser challenge and refresh your authentication cookie."
+                )
+                return self._handle_request_error(
+                    message,
+                    url=url,
+                    status_code=response.status_code,
+                    response_text=response.text,
+                    challenge=True,
+                )
+
             response.raise_for_status()
             return response
         except requests.exceptions.RequestException as e:
-            print(f"Error making {method} request to {url}: {e}")
-            return None
+            status_code = getattr(e.response, "status_code", None) if e.response is not None else None
+            response_text = getattr(e.response, "text", None) if e.response is not None else None
+            message = f"Error making {method} request to {url}: {e}"
+            return self._handle_request_error(
+                message,
+                url=url,
+                status_code=status_code,
+                response_text=response_text,
+            )
 
     def get_headers(self, get_request=False):
         headers = {
@@ -142,7 +231,7 @@ class UdioWrapper:
         if custom_lyrics:
             data["lyricInput"] = custom_lyrics
         response = self.make_request(url, 'POST', data, headers)
-        return response.json() if response else None
+        return self._response_json(response) if response else None
 
     def generate_extend_song(self, prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics=None):
         url = f"{self.API_BASE_URL}/generate-proxy"
@@ -159,7 +248,7 @@ class UdioWrapper:
         if custom_lyrics:
             data["lyricInput"] = custom_lyrics
         response = self.make_request(url, 'POST', data, headers)
-        return response.json() if response else None
+        return self._response_json(response) if response else None
 
     def generate_outro(self, prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics=None):
         url = f"{self.API_BASE_URL}/generate-proxy"
@@ -177,7 +266,7 @@ class UdioWrapper:
         if custom_lyrics:
             data["lyricInput"] = custom_lyrics
         response = self.make_request(url, 'POST', data, headers)
-        return response.json() if response else None
+        return self._response_json(response) if response else None
 
     def process_songs(self, track_ids, folder):
         """Function to process generated songs, wait until they are ready, and download them."""
@@ -202,7 +291,9 @@ class UdioWrapper:
         headers = self.get_headers(True)
         response = self.make_request(url, 'GET', None, headers)
         if response:
-            data = response.json()
+            data = self._response_json(response)
+            if data is None:
+                return None
             all_finished = all(song['finished'] for song in data['songs'])
             return {'all_finished': all_finished, 'data': data}
         else:
@@ -219,4 +310,3 @@ class UdioWrapper:
             print(f"Downloaded {song_title} with url {song_url} to {file_path}")
         except requests.exceptions.RequestException as e:
             print(f"Failed to download the song. Error: {e}")
-
