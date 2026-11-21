@@ -75,6 +75,29 @@ auth_token = "your-auth-token-here"  # Replace this with your actual authenticat
 udio_wrapper = UdioWrapper(auth_token)
 ```
 
+## Error handling
+
+By default, request failures are printed and return `None`, preserving the original library behavior.
+Set `raise_on_error=True` to receive structured exceptions instead:
+
+```python
+from udio_wrapper import UdioWrapper, UdioChallengeError, UdioRequestError
+
+udio_wrapper = UdioWrapper(auth_token, raise_on_error=True)
+
+try:
+    song = udio_wrapper.create_song("Relaxing jazz")
+except UdioChallengeError as error:
+    print("Udio requires a browser challenge:", error.status_code)
+    print("Complete the challenge on udio.com, then refresh sb-api-auth-token.")
+except UdioRequestError as error:
+    print("Udio request failed:", error.status_code, error.url)
+```
+
+`UdioChallengeError` indicates an hCaptcha or browser challenge response. `UdioRequestError`
+contains `status_code`, `url`, and `response_text` when available. Requests use a 30-second
+timeout by default; pass `timeout=<seconds>` to customize it.
+
 1. Creating a Short Song
 You can specify the prompt, seed, custom lyrics.
 ```python
