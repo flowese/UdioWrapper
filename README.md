@@ -66,6 +66,52 @@ pip install git+https://github.com/flowese/UdioWrapper.git
 
 To use `udio_wrapper`, import the `UdioWrapper` class and provide the necessary parameters.
 
+### Error Handling & Human Verification
+
+The wrapper raises structured exceptions rather than silently returning `None` on network and HTTP failures:
+
+- **`UdioChallengeError`**: Raised when Udio explicitly requires human verification (e.g., CAPTCHA / hCaptcha). When encountered, open Udio in your standard web browser and complete the verification manually. The wrapper does not attempt automated CAPTCHA bypassing.
+- **`UdioAuthenticationError`**: Raised on HTTP 401 Unauthorized responses. Verify your `sb-api-auth-token` and ensure your browser session is active.
+- **`UdioHTTPError`**: Raised on general HTTP 4xx/5xx errors (e.g. HTTP 500, 429, 502). Preserves the original `response` object.
+- **`UdioResponseError`**: Raised when an API response body cannot be parsed or lacks expected fields.
+- **`requests.exceptions.Timeout`**: Raised if a request exceeds the configured `timeout`.
+
+Example:
+
+```python
+import requests
+from udio_wrapper import (
+    UdioWrapper,
+    UdioChallengeError,
+    UdioAuthenticationError,
+    UdioHTTPError,
+    UdioResponseError,
+)
+
+auth_token = "your-auth-token-here"
+udio = UdioWrapper(auth_token, timeout=30)
+
+try:
+    result = udio.create_song("Relaxing jazz and soulful music")
+except UdioChallengeError:
+    print("Verification required: Please visit Udio in your browser to complete verification.")
+except UdioAuthenticationError:
+    print("Authentication failed: Check your sb-api-auth-token.")
+except UdioHTTPError as e:
+    print(f"Udio API returned HTTP status {e.response.status_code}")
+except requests.exceptions.Timeout:
+    print("Request timed out. Please check Udio's status before retrying.")
+```
+
+### Running Offline Tests
+
+Run the offline unit tests without making any live requests to Udio:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+
 ## Usage Examples
 
 The following examples demonstrate various ways to use the `UdioWrapper` to generate music based on different scenarios:

@@ -6,34 +6,62 @@ Date: 2024-04-15
 Description: Generates songs using the Udio API using textual prompts.
 """
 
-import requests
+import math
 import os
 import time
+from numbers import Real
+import requests
+
+from .errors import (
+    UdioAuthenticationError,
+    UdioChallengeError,
+    UdioError,
+    UdioHTTPError,
+    UdioResponseError,
+    is_challenge_response,
+    raise_for_status,
+)
+
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
-        self.auth_token = auth_token
+    def __init__(self, auth_token, timeout=30):
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, Real)
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise ValueError("timeout must be a finite positive number of seconds")
+
+        if not isinstance(auth_token, str) or not auth_token.strip():
+            raise ValueError("auth_token must be a non-empty string")
+
+        token = auth_token.strip()
+        if token.startswith("sb-api-auth-token="):
+            token = token[len("sb-api-auth-token="):].strip()
+        self.auth_token = token
+        self.timeout = float(timeout)
         self.all_track_ids = []
 
     def make_request(self, url, method, data=None, headers=None):
-        try:
-            if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
-            else:
-                response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            return response
-        except requests.exceptions.RequestException as e:
-            print(f"Error making {method} request to {url}: {e}")
-            return None
+        method = method.upper()
+        if method == 'POST':
+            response = requests.post(url, headers=headers, json=data, timeout=self.timeout)
+        elif method == 'GET':
+            response = requests.get(url, headers=headers, timeout=self.timeout)
+        else:
+            raise ValueError("method must be GET or POST")
+
+        raise_for_status(response)
+        return response
 
     def get_headers(self, get_request=False):
         headers = {
             "Accept": "application/json, text/plain, */*" if get_request else "application/json",
             "Content-Type": "application/json",
-            "Cookie": f"; sb-api-auth-token={self.auth_token}",
+            "Cookie": f"sb-api-auth-token={self.auth_token}",
             "Origin": "https://www.udio.com",
             "Referer": "https://www.udio.com/my-creations",
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
@@ -45,8 +73,7 @@ class UdioWrapper:
             headers.update({
                 "sec-ch-ua": '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
                 "sec-ch-ua-mobile": "?0",
-                "sec-ch-ua-platform": '"macOS"',
-                "sec-fetch-dest": "empty"
+                "sec-ch-ua-platform": '"macOS"'
             })
         return headers
 
@@ -112,6 +139,8 @@ class UdioWrapper:
         if not song_result:
             return None
         track_ids = song_result.get('track_ids', [])
+        if not track_ids:
+            return []
         self.all_track_ids.extend(track_ids)
         return self.process_songs(track_ids, "short_songs")
 
@@ -122,6 +151,8 @@ class UdioWrapper:
         if not extend_song_result:
             return None
         extend_track_ids = extend_song_result.get('track_ids', [])
+        if not extend_track_ids:
+            return []
         self.all_track_ids.extend(extend_track_ids)
         return self.process_songs(extend_track_ids, "extend_songs")
 
@@ -132,19 +163,24 @@ class UdioWrapper:
         if not outro_result:
             return None
         outro_track_ids = outro_result.get('track_ids', [])
+        if not outro_track_ids:
+            return []
         self.all_track_ids.extend(outro_track_ids)
         return self.process_songs(outro_track_ids, "outro_songs")
 
-    def generate_song(self, prompt, seed, custom_lyrics=None):
+    def generate_song(self, prompt, seed=-1, custom_lyrics=None):
         url = f"{self.API_BASE_URL}/generate-proxy"
         headers = self.get_headers()
         data = {"prompt": prompt, "samplerOptions": {"seed": seed}}
         if custom_lyrics:
             data["lyricInput"] = custom_lyrics
         response = self.make_request(url, 'POST', data, headers)
-        return response.json() if response else None
+        try:
+            return response.json()
+        except Exception as e:
+            raise UdioResponseError(f"Failed to parse generation response from {url} as JSON", response=response) from e
 
-    def generate_extend_song(self, prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics=None):
+    def generate_extend_song(self, prompt, seed=-1, audio_conditioning_path=None, audio_conditioning_song_id=None, custom_lyrics=None):
         url = f"{self.API_BASE_URL}/generate-proxy"
         headers = self.get_headers()
         data = {
@@ -159,9 +195,12 @@ class UdioWrapper:
         if custom_lyrics:
             data["lyricInput"] = custom_lyrics
         response = self.make_request(url, 'POST', data, headers)
-        return response.json() if response else None
+        try:
+            return response.json()
+        except Exception as e:
+            raise UdioResponseError(f"Failed to parse generation response from {url} as JSON", response=response) from e
 
-    def generate_outro(self, prompt, seed, audio_conditioning_path, audio_conditioning_song_id, custom_lyrics=None):
+    def generate_outro(self, prompt, seed=-1, audio_conditioning_path=None, audio_conditioning_song_id=None, custom_lyrics=None):
         url = f"{self.API_BASE_URL}/generate-proxy"
         headers = self.get_headers()
         data = {
@@ -177,7 +216,10 @@ class UdioWrapper:
         if custom_lyrics:
             data["lyricInput"] = custom_lyrics
         response = self.make_request(url, 'POST', data, headers)
-        return response.json() if response else None
+        try:
+            return response.json()
+        except Exception as e:
+            raise UdioResponseError(f"Failed to parse generation response from {url} as JSON", response=response) from e
 
     def process_songs(self, track_ids, folder):
         """Function to process generated songs, wait until they are ready, and download them."""
@@ -201,18 +243,23 @@ class UdioWrapper:
         url = f"{self.API_BASE_URL}/songs?songIds={','.join(song_ids)}"
         headers = self.get_headers(True)
         response = self.make_request(url, 'GET', None, headers)
-        if response:
+        try:
             data = response.json()
-            all_finished = all(song['finished'] for song in data['songs'])
-            return {'all_finished': all_finished, 'data': data}
-        else:
-            return None
+        except Exception as e:
+            raise UdioResponseError("Failed to parse song status response as JSON", response=response) from e
+
+        songs = data.get('songs')
+        if not isinstance(songs, list):
+            raise UdioResponseError("Song status response missing 'songs' list", response=response)
+
+        all_finished = bool(songs) and all(song.get('finished', False) for song in songs)
+        return {'all_finished': all_finished, 'data': data}
 
     def download_song(self, song_url, song_title, folder="downloaded_songs"):
         os.makedirs(folder, exist_ok=True)
         file_path = os.path.join(folder, f"{song_title}.mp3")
         try:
-            response = requests.get(song_url)
+            response = requests.get(song_url, timeout=self.timeout)
             response.raise_for_status()
             with open(file_path, 'wb') as file:
                 file.write(response.content)
@@ -220,3 +267,14 @@ class UdioWrapper:
         except requests.exceptions.RequestException as e:
             print(f"Failed to download the song. Error: {e}")
 
+
+__all__ = [
+    "UdioWrapper",
+    "UdioError",
+    "UdioHTTPError",
+    "UdioAuthenticationError",
+    "UdioChallengeError",
+    "UdioResponseError",
+    "is_challenge_response",
+    "raise_for_status",
+]
