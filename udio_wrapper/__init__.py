@@ -103,3 +103,212 @@ class UdioWrapper:
 
         print("Generating the short song...")
         
+        short_song_result = self.create_song(
+            short_prompt, seed, custom_lyrics_short, hcaptcha_token=hcaptcha_token
+        )
+        if not short_song_result:
+            print("Error generating the short song.")
+            return None
+
+        last_song_result = short_song_result
+        extend_song_results = []
+
+        for i in range(num_extensions):
+            if i < len(extend_prompts):
+                prompt = extend_prompts[i]
+                lyrics = custom_lyrics_extend[i] if custom_lyrics_extend and i < len(custom_lyrics_extend) else None
+            else:
+                prompt = extend_prompts[-1]
+                lyrics = custom_lyrics_extend[-1] if custom_lyrics_extend else None
+
+            print(f"Generating extend song {i + 1}...")
+            extend_song_result = self.extend(
+                prompt,
+                seed,
+                audio_conditioning_path=last_song_result[0]["song_path"],
+                audio_conditioning_song_id=last_song_result[0]["id"],
+                custom_lyrics=lyrics,
+                hcaptcha_token=hcaptcha_token,
+            )
+            if not extend_song_result:
+                print(f"Error generating extend song {i + 1}.")
+                return None
+
+            extend_song_results.append(extend_song_result)
+            last_song_result = extend_song_result
+
+        print("Generating the outro...")
+        outro_song_result = self.add_outro(
+            outro_prompt,
+            seed,
+            audio_conditioning_path=last_song_result[0]["song_path"],
+            audio_conditioning_song_id=last_song_result[0]["id"],
+            custom_lyrics=custom_lyrics_outro,
+            hcaptcha_token=hcaptcha_token,
+        )
+        if not outro_song_result:
+            print("Error generating the outro.")
+            return None
+
+        print("Complete song sequence generated and processed successfully.")
+        return {
+            "short_song": short_song_result,
+            "extend_songs": extend_song_results,
+            "outro_song": outro_song_result,
+        }
+
+    def create_song(self, prompt, seed=-1, custom_lyrics=None, hcaptcha_token=None):
+        song_result = self.generate_song(prompt, seed, custom_lyrics, hcaptcha_token=hcaptcha_token)
+        if not song_result:
+            return None
+        track_ids = song_result.get("track_ids", [])
+        self.all_track_ids.extend(track_ids)
+        return self.process_songs(track_ids, "short_songs")
+
+    def extend(
+        self,
+        prompt,
+        seed=-1,
+        audio_conditioning_path=None,
+        audio_conditioning_song_id=None,
+        custom_lyrics=None,
+        hcaptcha_token=None,
+    ):
+        extend_song_result = self.generate_extend_song(
+            prompt,
+            seed,
+            audio_conditioning_path,
+            audio_conditioning_song_id,
+            custom_lyrics,
+            hcaptcha_token=hcaptcha_token,
+        )
+        if not extend_song_result:
+            return None
+        extend_track_ids = extend_song_result.get("track_ids", [])
+        self.all_track_ids.extend(extend_track_ids)
+        return self.process_songs(extend_track_ids, "extend_songs")
+
+    def add_outro(
+        self,
+        prompt,
+        seed=-1,
+        audio_conditioning_path=None,
+        audio_conditioning_song_id=None,
+        custom_lyrics=None,
+        hcaptcha_token=None,
+    ):
+        outro_result = self.generate_outro(
+            prompt,
+            seed,
+            audio_conditioning_path,
+            audio_conditioning_song_id,
+            custom_lyrics,
+            hcaptcha_token=hcaptcha_token,
+        )
+        if not outro_result:
+            return None
+        outro_track_ids = outro_result.get("track_ids", [])
+        self.all_track_ids.extend(outro_track_ids)
+        return self.process_songs(outro_track_ids, "outro_songs")
+
+    def generate_song(self, prompt, seed, custom_lyrics=None, hcaptcha_token=None):
+        url = f"{self.API_BASE_URL}/generate-proxy"
+        token = self.resolve_hcaptcha(hcaptcha_token)
+        headers = self.get_headers(hcaptcha_token=token)
+        data = self._build_payload(prompt, seed, custom_lyrics=custom_lyrics, hcaptcha_token=token)
+        response = self.make_request(url, "POST", data, headers)
+        return response.json() if response else None
+
+    def generate_extend_song(
+        self,
+        prompt,
+        seed,
+        audio_conditioning_path,
+        audio_conditioning_song_id,
+        custom_lyrics=None,
+        hcaptcha_token=None,
+    ):
+        url = f"{self.API_BASE_URL}/generate-proxy"
+        token = self.resolve_hcaptcha(hcaptcha_token)
+        headers = self.get_headers(hcaptcha_token=token)
+        data = self._build_payload(
+            prompt,
+            seed,
+            custom_lyrics=custom_lyrics,
+            sampler_extra={
+                "audio_conditioning_path": audio_conditioning_path,
+                "audio_conditioning_song_id": audio_conditioning_song_id,
+                "audio_conditioning_type": "continuation",
+            },
+            hcaptcha_token=token,
+        )
+        response = self.make_request(url, "POST", data, headers)
+        return response.json() if response else None
+
+    def generate_outro(
+        self,
+        prompt,
+        seed,
+        audio_conditioning_path,
+        audio_conditioning_song_id,
+        custom_lyrics=None,
+        hcaptcha_token=None,
+    ):
+        url = f"{self.API_BASE_URL}/generate-proxy"
+        token = self.resolve_hcaptcha(hcaptcha_token)
+        headers = self.get_headers(hcaptcha_token=token)
+        data = self._build_payload(
+            prompt,
+            seed,
+            custom_lyrics=custom_lyrics,
+            sampler_extra={
+                "audio_conditioning_path": audio_conditioning_path,
+                "audio_conditioning_song_id": audio_conditioning_song_id,
+                "audio_conditioning_type": "continuation",
+                "crop_start_time": 0.9,
+            },
+            hcaptcha_token=token,
+        )
+        response = self.make_request(url, "POST", data, headers)
+        return response.json() if response else None
+
+    def process_songs(self, track_ids, folder):
+        """Function to process generated songs, wait until they are ready, and download them."""
+        print(f"Processing songs in {folder} with track_ids {track_ids}...")
+        while True:
+            status_result = self.check_song_status(track_ids)
+            if status_result is None:
+                print(f"Error checking song status for {folder}.")
+                return None
+            elif status_result.get("all_finished", False):
+                songs = []
+                for song in status_result["data"]["songs"]:
+                    self.download_song(song["song_path"], song["title"], folder=folder)
+                    songs.append(song)
+                print(f"All songs in {folder} are ready and downloaded.")
+                return songs
+            else:
+                time.sleep(5)
+
+    def check_song_status(self, song_ids):
+        url = f"{self.API_BASE_URL}/songs?songIds={','.join(song_ids)}"
+        headers = self.get_headers(get_request=True)
+        response = self.make_request(url, "GET", None, headers)
+        if response:
+            data = response.json()
+            all_finished = all(song["finished"] for song in data["songs"])
+            return {"all_finished": all_finished, "data": data}
+        return None
+
+    def download_song(self, song_url, song_title, folder="downloaded_songs"):
+        os.makedirs(folder, exist_ok=True)
+        file_path = os.path.join(folder, f"{song_title}.mp3")
+        try:
+            response = requests.get(song_url, timeout=self.timeout)
+            response.raise_for_status()
+            with open(file_path, "wb") as file:
+                file.write(response.content)
+            print(f"Downloaded {song_title} with url {song_url} to {file_path}")
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to download the song. Error: {e}")
+            
