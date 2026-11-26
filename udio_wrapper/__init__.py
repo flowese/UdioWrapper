@@ -1,52 +1,99 @@
 """
 Udio Wrapper
 Author: Flowese
-Version: 0.0.3
-Date: 2024-04-15
+Version: 0.0.4
+Date: 2024-11-26
 Description: Generates songs using the Udio API using textual prompts.
 """
 
 import requests
 import os
 import time
+import json
+
 
 class UdioWrapper:
     API_BASE_URL = "https://www.udio.com/api"
 
-    def __init__(self, auth_token):
+    def __init__(self, auth_token, debug=False):
         self.auth_token = auth_token
         self.all_track_ids = []
+        self.debug = debug
 
     def make_request(self, url, method, data=None, headers=None):
         try:
             if method == 'POST':
-                response = requests.post(url, headers=headers, json=data)
+                response = requests.post(url, headers=headers, json=data, timeout=60)
             else:
-                response = requests.get(url, headers=headers)
+                response = requests.get(url, headers=headers, timeout=60)
+
+            # Print response details in debug mode
+            if self.debug:
+                print(f"[DEBUG] {method} {url}")
+                print(f"[DEBUG] Status: {response.status_code}")
+                print(f"[DEBUG] Response headers: {dict(response.headers)}")
+                try:
+                    print(f"[DEBUG] Response body: {response.text[:2000]}")
+                except Exception:
+                    print("[DEBUG] Response body: <binary or empty>")
+
+            # Check for CAPTCHA challenge in response
+            if response.status_code == 500:
+                try:
+                    error_data = response.json()
+                    if self._is_captcha_error(error_data):
+                        raise CaptchaRequiredError(
+                            "Udio API returned a CAPTCHA challenge. "
+                            "This wrapper cannot automatically solve CAPTCHAs. "
+                            "You may need to solve the CAPTCHA manually in a browser first, "
+                            "or use a CAPTCHA solving service."
+                        )
+                except json.JSONDecodeError:
+                    pass
+
             response.raise_for_status()
             return response
+        except requests.exceptions.Timeout:
+            print(f"Error: Request to {url} timed out after 60 seconds")
+            return None
         except requests.exceptions.RequestException as e:
             print(f"Error making {method} request to {url}: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"Response status: {e.response.status_code}")
+                try:
+                    print(f"Response body: {e.response.text[:2000]}")
+                except Exception:
+                    print("Response body: <could not read>")
             return None
+
+    def _is_captcha_error(self, error_data):
+        """Check if the error response indicates a CAPTCHA challenge."""
+        if not isinstance(error_data, dict):
+            return False
+        # Common indicators of CAPTCHA in error responses
+        error_str = json.dumps(error_data).lower()
+        captcha_indicators = ['captcha', 'hcaptcha', 'turnstile', 'challenge', 'recaptcha']
+        return any(indicator in error_str for indicator in captcha_indicators)
 
     def get_headers(self, get_request=False):
         headers = {
             "Accept": "application/json, text/plain, */*" if get_request else "application/json",
             "Content-Type": "application/json",
-            "Cookie": f"; sb-api-auth-token={self.auth_token}",
+            "Cookie": f"sb-api-auth-token={self.auth_token}",
             "Origin": "https://www.udio.com",
             "Referer": "https://www.udio.com/my-creations",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             "Sec-Fetch-Site": "same-origin",
             "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Dest": "empty"
+            "Sec-Fetch-Dest": "empty",
+            "Accept-Language": "en-US,en;q=0.9",
         }
         if not get_request:
             headers.update({
-                "sec-ch-ua": '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
+                "sec-ch-ua": '"Google Chrome";v="131", "Not:A-Brand";v="8", "Chromium";v="131"',
                 "sec-ch-ua-mobile": "?0",
-                "sec-ch-ua-platform": '"macOS"',
-                "sec-fetch-dest": "empty"
+                "sec-ch-ua-platform": '"Windows"',
+                "sec-fetch-dest": "empty",
             })
         return headers
 
@@ -182,7 +229,9 @@ class UdioWrapper:
     def process_songs(self, track_ids, folder):
         """Function to process generated songs, wait until they are ready, and download them."""
         print(f"Processing songs in {folder} with track_ids {track_ids}...")
-        while True:
+        max_retries = 60  # 5 minutes max wait
+        retry_count = 0
+        while retry_count < max_retries:
             status_result = self.check_song_status(track_ids)
             if status_result is None:
                 print(f"Error checking song status for {folder}.")
@@ -196,6 +245,9 @@ class UdioWrapper:
                 return songs
             else:
                 time.sleep(5)
+                retry_count += 1
+        print(f"Timeout waiting for songs in {folder} to finish.")
+        return None
 
     def check_song_status(self, song_ids):
         url = f"{self.API_BASE_URL}/songs?songIds={','.join(song_ids)}"
@@ -210,9 +262,11 @@ class UdioWrapper:
 
     def download_song(self, song_url, song_title, folder="downloaded_songs"):
         os.makedirs(folder, exist_ok=True)
-        file_path = os.path.join(folder, f"{song_title}.mp3")
+        # Sanitize filename
+        safe_title = "".join(c for c in song_title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        file_path = os.path.join(folder, f"{safe_title}.mp3")
         try:
-            response = requests.get(song_url)
+            response = requests.get(song_url, timeout=60)
             response.raise_for_status()
             with open(file_path, 'wb') as file:
                 file.write(response.content)
@@ -220,3 +274,18 @@ class UdioWrapper:
         except requests.exceptions.RequestException as e:
             print(f"Failed to download the song. Error: {e}")
 
+
+class CaptchaRequiredError(Exception):
+    """Raised when Udio API returns a CAPTCHA challenge."""
+    pass
+
+
+# For backwards compatibility
+def main():
+    print("UdioWrapper v0.0.4")
+    print("Usage: from udio_wrapper import UdioWrapper")
+    print("       wrapper = UdioWrapper('your-auth-token', debug=True)")
+
+
+if __name__ == "__main__":
+    main()
