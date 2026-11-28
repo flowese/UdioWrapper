@@ -25,7 +25,7 @@ class UdioWrapper:
                 response = requests.get(url, headers=headers)
             response.raise_for_status()
             return response
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             print(f"Error making {method} request to {url}: {e}")
             return None
 
@@ -33,7 +33,7 @@ class UdioWrapper:
         headers = {
             "Accept": "application/json, text/plain, */*" if get_request else "application/json",
             "Content-Type": "application/json",
-            "Cookie": f"; sb-api-auth-token={self.auth_token}",
+            "Cookie": f"sb-api-auth-token={self.auth_token}",
             "Origin": "https://www.udio.com",
             "Referer": "https://www.udio.com/my-creations",
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
